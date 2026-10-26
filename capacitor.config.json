@@ -1,0 +1,22 @@
+{
+  "appId": "pl.zayra.assistant",
+  "appName": "Zayra",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#0b0d16"
+  },
+  "server": {
+    "url": "https://zayra.vercel.app",
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "backgroundColor": "#0b0d16",
+      "showSpinner": false,
+      "launchAutoHide": true
+    }
+  }
+}

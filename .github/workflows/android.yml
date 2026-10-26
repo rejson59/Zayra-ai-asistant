@@ -1,0 +1,71 @@
+name: Zbuduj APK Zayry
+
+# Ręczne uruchomienie: Actions → "Zbuduj APK Zayry" → Run workflow.
+# Wymaga ustawienia sekretu ZAYRA_URL (adres wdrożonej aplikacji na Vercel),
+# albo podmiany adresu w capacitor.config.json.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Zależności
+        run: npm install
+
+      - name: Ustaw adres aplikacji
+        if: ${{ secrets.ZAYRA_URL != '' }}
+        run: |
+          node -e "
+            const fs=require('fs');
+            const cfg=JSON.parse(fs.readFileSync('capacitor.config.json','utf8'));
+            cfg.server.url=process.env.ZAYRA_URL;
+            fs.writeFileSync('capacitor.config.json',JSON.stringify(cfg,null,2));
+          "
+        env:
+          ZAYRA_URL: ${{ secrets.ZAYRA_URL }}
+
+      - name: Dodaj Capacitor i platformę Android
+        run: |
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android @capacitor/splash-screen
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Uprawnienie do mikrofonu
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q RECORD_AUDIO "$MANIFEST" || \
+            sed -i 's|<application|<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <application|' "$MANIFEST"
+          cat "$MANIFEST"
+
+      - name: Zbuduj APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Udostępnij APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zayra-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

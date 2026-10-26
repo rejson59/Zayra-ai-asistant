@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="72%">
+      <stop offset="0%" stop-color="#1d2140"/>
+      <stop offset="100%" stop-color="#0b0d16"/>
+    </radialGradient>
+    <linearGradient id="orb" x1="18%" y1="10%" x2="86%" y2="92%">
+      <stop offset="0%" stop-color="#7de3d0"/>
+      <stop offset="52%" stop-color="#b79cff"/>
+      <stop offset="100%" stop-color="#ffb0c8"/>
+    </linearGradient>
+    <radialGradient id="core" cx="42%" cy="34%" r="70%">
+      <stop offset="0%" stop-color="#2a2c4d"/>
+      <stop offset="100%" stop-color="#0b0d16"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="150" fill="url(#orb)" opacity="0.35"/>
+  <circle cx="256" cy="256" r="132" fill="url(#orb)"/>
+  <circle cx="256" cy="256" r="106" fill="url(#core)"/>
+  <path d="M256 196v120M204 226v60M308 226v60M178 244v24M334 244v24" stroke="url(#orb)" stroke-width="17" stroke-linecap="round"/>
+  <ellipse cx="216" cy="188" rx="46" ry="26" fill="#ffffff" opacity="0.15"/>
+</svg>
