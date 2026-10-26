@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { GREETING, SUGGESTIONS } from "@/lib/persona";
-import type { AssistantMode, Message } from "@/lib/types";
+import { greeting, SUGGESTIONS } from "@/lib/persona";
+import type { AddressForm, AssistantMode, Message } from "@/lib/types";
 import { SpeakerIcon } from "./Icons";
 
 type ThreadProps = {
   messages: Message[];
   mode: AssistantMode;
+  address: AddressForm;
   busy: boolean;
   interim: string;
   listening: boolean;
@@ -26,6 +27,7 @@ function timeOf(iso: string) {
 export function Thread({
   messages,
   mode,
+  address,
   busy,
   interim,
   listening,
@@ -44,7 +46,7 @@ export function Thread({
     <div className="thread" role="log" aria-live="polite" aria-label="Rozmowa z Zayrą">
       {empty && (
         <div className="empty">
-          <p className="empty-greeting">{GREETING[mode]}</p>
+          <p className="empty-greeting">{greeting(address, mode)}</p>
           <p className="empty-hint">
             Kliknij kulę albo naciśnij spację, żeby mówić. Możesz też napisać.
           </p>

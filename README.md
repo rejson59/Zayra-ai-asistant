@@ -60,8 +60,10 @@ Zayra uruchomi się pełnoekranowo z własną ikoną — jak zwykła aplikacja.
 - **Rozmowa głosowa** — rozpoznawanie mowy `pl-PL`, polski głos z syntezatora systemowego, regulacja tempa.
 - **Tryb głośnomówiący** — po odpowiedzi sama włącza mikrofon; rozmawiasz bez dotykania tabletu.
 - **Przerywanie** — jedno tapnięcie kuli przerywa mówienie Zayry.
-- **Trzy tryby pracy** — `Auto`, `Praca`, `Osobiste`. Każdy ma własny ton, przykładowe polecenia i priorytety.
-- **Forma zwracania się** — „Pani / Pan" albo „na Ty".
+- **Trzy tryby pracy** — `Auto`, `Praca`, `Osobiste`. Każdy ma własny zakres, przykładowe polecenia i priorytety.
+- **Ton profesjonalny i konkretny** — bez wypełniaczy, bez chwalenia pytań, bez tłumaczenia podstaw.
+  Zayra traktuje Cię jak kompetentnego dorosłego: jeśli używasz specjalistycznego języka, odpowiada na tym samym poziomie.
+- **Forma zwracania się** — **„Szefie"** (domyślna), „Pani / Pan" albo „na Ty".
 - **Pamięć trwała** — powiedz *„zapamiętaj, że mam spotkania w poniedziałki"*, a Zayra zapisze to na stałe.
   Pamięcią zarządzasz w **Ustawienia → Profil i pamięć**.
 - **Profil użytkownika** — krótki opis („prowadzę firmę, wolę konkrety") trafia do kontekstu każdej rozmowy.
@@ -145,8 +147,11 @@ lib/
 ### Chcesz zmienić charakter Zayry?
 
 Cały jej „charakter" jest w **`lib/persona.ts`**:
-`CORE` (kim jest i jak mówi), `ADDRESS` (forma), `MODES` (praca / osobiste), `GREETING`, `SUGGESTIONS`.
+`CORE` (kim jest i jak mówi), `ADDRESS` (forma zwracania się), `MODES` (praca / osobiste), `greeting()`, `SUGGESTIONS`.
 Zmień tekst, odśwież stronę — reszta aplikacji nie wymaga modyfikacji.
+
+Aktualne ustawienie domyślne: **„Szefie" + ton profesjonalny i konkretny**.
+„Panie"/„na Ty" wybierzesz w **Ustawienia → Profil i pamięć → Forma zwracania się**.
 
 ---
 

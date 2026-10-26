@@ -12,7 +12,7 @@ export type Message = {
 
 export type AssistantMode = "auto" | "praca" | "osobiste";
 
-export type AddressForm = "formal" | "informal";
+export type AddressForm = "boss" | "formal" | "informal";
 
 export type ProviderId = "groq" | "openrouter" | "gemini" | "custom" | "server" | "demo";
 
@@ -37,7 +37,7 @@ export type Settings = {
 
 export const DEFAULT_SETTINGS: Settings = {
   mode: "auto",
-  address: "formal",
+  address: "boss",
   autoSpeak: true,
   voiceRate: 1.02,
   voiceURI: null,

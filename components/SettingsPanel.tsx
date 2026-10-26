@@ -296,7 +296,13 @@ export function SettingsPanel({
             <>
               <label className="field">
                 <span className="field-label">Forma zwracania się</span>
-                <div className="segmented">
+                <div className="segmented segmented-3">
+                  <button
+                    className={settings.address === "boss" ? "is-active" : ""}
+                    onClick={() => onChange({ address: "boss" })}
+                  >
+                    Szefie
+                  </button>
                   <button
                     className={settings.address === "formal" ? "is-active" : ""}
                     onClick={() => onChange({ address: "formal" })}

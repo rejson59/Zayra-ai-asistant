@@ -3,7 +3,7 @@
  * Zamiast udawać model, Zayra uczciwie mówi, że jest w trybie demo,
  * pokazuje przykładową odpowiedź i prowadzi do konfiguracji.
  */
-import type { AssistantMode } from "./types";
+import type { AddressForm, AssistantMode } from "./types";
 
 const INTROS = [
   "Działam teraz w trybie demo, bez podłączonego modelu, więc nie mogę jeszcze myśleć samodzielnie.",
@@ -41,16 +41,18 @@ function pick<T>(arr: T[], seed: number): T {
   return arr[seed % arr.length];
 }
 
-export function demoReply(userText: string, mode: AssistantMode): string {
+export function demoReply(userText: string, mode: AssistantMode, address: AddressForm = "boss"): string {
   const text = userText.trim();
+  const vocative = address === "boss" ? "Szefie, " : "";
+  const lowerFirst = (t: string) => (vocative ? t.charAt(0).toLowerCase() + t.slice(1) : t);
   const seed = text.length + text.charCodeAt(0 || 0);
 
   if (!text) {
-    return "Jestem w trybie demo. Powiedz lub napisz, czego potrzebujesz, a podpowiem, jak to obsłużę po podłączeniu modelu.";
+    return `${vocative}jestem w trybie demo. Powiedz lub napisz, czego potrzebujesz, a podpowiem, jak to obsłużę po podłączeniu modelu.`;
   }
 
   const skill = SKILLS.find((s) => s.match.test(lower(text)));
-  const intro = pick(INTROS, seed);
+  const intro = lowerFirst(pick(INTROS, seed));
   const modeLine =
     mode === "praca"
       ? "Tryb pracy jest już ustawiony."
@@ -62,8 +64,8 @@ export function demoReply(userText: string, mode: AssistantMode): string {
     "Aby zacząć prawdziwą rozmowę, wejdź w Ustawienia i wklej darmowy klucz Groq albo Google Gemini. Zajmie to około minuty.";
 
   if (skill) {
-    return `${intro} ${skill.sample} ${next}`;
+    return `${vocative}${intro} ${skill.sample} ${next}`;
   }
 
-  return `Usłyszałam: „${text.slice(0, 140)}${text.length > 140 ? "…" : ""}”. ${intro} ${modeLine} ${next}`;
+  return `${vocative}usłyszałam: „${text.slice(0, 140)}${text.length > 140 ? "…" : ""}”. ${intro} ${modeLine} ${next}`;
 }

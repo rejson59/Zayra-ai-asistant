@@ -141,7 +141,7 @@ export function useZayra() {
 
       // 2. Tryb demo (brak klucza) — uczciwa odpowiedź lokalna.
       if (connection === "demo") {
-        const reply = demoReply(text, settings.mode);
+        const reply = demoReply(text, settings.mode, settings.address);
         append(reply);
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, demo: true } : m)));
         saveMessages([...history, { ...assistantMessage, content: reply, demo: true }]);
@@ -185,7 +185,7 @@ export function useZayra() {
         const isNotConfigured = (err as { code?: string }).code === "not_configured";
         setError(message);
         if (isNotConfigured) {
-          const reply = demoReply(text, settings.mode);
+          const reply = demoReply(text, settings.mode, settings.address);
           setMessages((prev) => {
             const next = prev.map((m) =>
               m.id === assistantId ? { ...m, content: reply, demo: true } : m

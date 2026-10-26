@@ -192,6 +192,7 @@ export default function Home() {
         <Thread
           messages={zayra.messages}
           mode={zayra.settings.mode}
+          address={zayra.settings.address}
           busy={busy}
           interim={speech.interim}
           listening={speechState === "listening"}
