@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { MODEL_SUGGESTIONS } from "@/lib/providers";
-import { PROVIDER_PRESETS, type ProviderId, type Settings } from "@/lib/types";
+import { synthesizeSpeech, TTS_PRESETS } from "@/lib/tts";
+import { PROVIDER_PRESETS, type ProviderId, type Settings, type TtsProvider } from "@/lib/types";
 import { BrainIcon, CloseIcon, TrashIcon } from "./Icons";
 
 type SettingsPanelProps = {
@@ -46,14 +47,23 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [tab, setTab] = useState<Tab>("model");
   const [provider, setProvider] = useState<keyof typeof PROVIDER_PRESETS>(
-    settings.device?.provider ?? "groq"
+    settings.device?.provider ?? "gemini"
   );
   const [apiKey, setApiKey] = useState(settings.device?.apiKey ?? "");
   const [model, setModel] = useState(
-    settings.device?.model ?? PROVIDER_PRESETS[settings.device?.provider ?? "groq"].model
+    settings.device?.model ?? PROVIDER_PRESETS[settings.device?.provider ?? "gemini"].model
   );
   const [baseUrl, setBaseUrl] = useState(settings.device?.baseUrl ?? "");
   const [saved, setSaved] = useState<string | null>(null);
+
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider>(settings.tts.provider);
+  const [ttsKey, setTtsKey] = useState(settings.tts.apiKey);
+  const [ttsVoice, setTtsVoice] = useState(settings.tts.voiceId);
+  const [ttsModel, setTtsModel] = useState(settings.tts.model);
+  const [ttsBase, setTtsBase] = useState(settings.tts.baseUrl);
+  const [voiceList, setVoiceList] = useState<{ id: string; name: string }[]>([]);
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const [ttsNote, setTtsNote] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -62,6 +72,84 @@ export function SettingsPanel({
   const flash = (message: string) => {
     setSaved(message);
     window.setTimeout(() => setSaved(null), 2600);
+  };
+
+  const presetTts = TTS_PRESETS[ttsProvider];
+
+  const saveTts = () => {
+    if (presetTts.needsKey && !ttsKey.trim()) {
+      setTtsNote("Wklej najpierw klucz dostawcy głosu.");
+      return;
+    }
+    if (presetTts.needsVoiceId && !ttsVoice.trim()) {
+      setTtsNote("Podaj identyfikator głosu (voice ID).");
+      return;
+    }
+    onChange({
+      tts: {
+        provider: ttsProvider,
+        apiKey: ttsKey.trim(),
+        voiceId: ttsVoice.trim(),
+        model: ttsModel.trim() || presetTts.models[0] || "",
+        baseUrl: ttsBase.trim() || settings.tts.baseUrl,
+      },
+    });
+    setTtsNote("Zapisane. Możesz przetestować głos przyciskiem poniżej.");
+  };
+
+  const testTts = async () => {
+    setTtsBusy(true);
+    setTtsNote(null);
+    try {
+      if (ttsProvider === "browser") {
+        const utterance = new SpeechSynthesisUtterance(
+          "Dzień dobry, szefie. To mój nowy głos. Jak brzmi?"
+        );
+        utterance.lang = "pl-PL";
+        utterance.rate = settings.voiceRate;
+        speechSynthesis.speak(utterance);
+        setTtsNote("Odtwarzam głos systemowy.");
+      } else {
+        const blob = await synthesizeSpeech({
+          text: "Dzień dobry, szefie. To mój nowy głos. Jak brzmi?",
+          tts: {
+            provider: ttsProvider,
+            apiKey: ttsKey.trim(),
+            voiceId: ttsVoice.trim(),
+            model: ttsModel.trim() || presetTts.models[0] || "",
+            baseUrl: ttsBase.trim(),
+          },
+        });
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => URL.revokeObjectURL(url);
+          await audio.play();
+          setTtsNote("Odtwarzam głos z modelu.");
+        }
+      }
+    } catch (err) {
+      setTtsNote(err instanceof Error ? err.message : "Nie udało się odtworzyć głosu.");
+    } finally {
+      setTtsBusy(false);
+    }
+  };
+
+  const loadVoices = async () => {
+    setTtsBusy(true);
+    setTtsNote(null);
+    try {
+      const res = await fetch(`/api/tts/voices?key=${encodeURIComponent(ttsKey.trim())}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error?.message || "Nie udało się pobrać głosów.");
+      const list = (json.voices ?? []) as { id: string; name: string }[];
+      setVoiceList(list);
+      setTtsNote(list.length ? `Znaleziono ${list.length} głosów — wybierz z listy.` : "Konto nie ma własnych głosów.");
+    } catch (err) {
+      setTtsNote(err instanceof Error ? err.message : "Błąd pobierania głosów.");
+    } finally {
+      setTtsBusy(false);
+    }
   };
 
   const saveKey = () => {
@@ -241,8 +329,160 @@ export function SettingsPanel({
 
           {tab === "glos" && (
             <>
-              <label className="field">
-                <span className="field-label">Głos Zayry</span>
+              <div className="field">
+                <span className="field-label">Silnik głosu</span>
+                <div className="provider-grid">
+                  {(Object.keys(TTS_PRESETS) as TtsProvider[]).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`provider-card ${ttsProvider === id ? "is-active" : ""}`}
+                      onClick={() => {
+                        setTtsProvider(id);
+                        setTtsModel(TTS_PRESETS[id].models[0] ?? "");
+                        setVoiceList([]);
+                        setTtsNote(null);
+                      }}
+                    >
+                      <strong>{TTS_PRESETS[id].label}</strong>
+                      <small>{TTS_PRESETS[id].hint}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {ttsProvider !== "browser" && (
+                <>
+                  {presetTts.needsKey && (
+                    <label className="field">
+                      <span className="field-label">Klucz API głosu</span>
+                      <input
+                        type="password"
+                        className="input"
+                        value={ttsKey}
+                        onChange={(e) => setTtsKey(e.target.value)}
+                        placeholder="wklej klucz…"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <span className="field-hint">
+                        Klucz:{" "}
+                        <a href={presetTts.keyUrl} target="_blank" rel="noreferrer">
+                          {presetTts.keyUrl.replace("https://", "")}
+                        </a>
+                      </span>
+                    </label>
+                  )}
+
+                  {presetTts.needsBaseUrl && (
+                    <label className="field">
+                      <span className="field-label">Adres serwera głosu</span>
+                      <input
+                        className="input"
+                        value={ttsBase}
+                        onChange={(e) => setTtsBase(e.target.value)}
+                        placeholder="http://192.168.1.10:8000/v1"
+                        spellCheck={false}
+                      />
+                      <span className="field-hint">
+                        Zgodny z OpenAI: <code>/v1/audio/speech</code>. Działa z openedai-speech (XTTS,
+                        Piper) oraz z serwerem XTTS. Tablet musi być w tej samej sieci Wi-Fi.
+                      </span>
+                    </label>
+                  )}
+
+                  <label className="field">
+                    <span className="field-label">
+                      {ttsProvider === "fishaudio" ? "Reference ID głosu" : "Voice ID"}
+                    </span>
+                    <input
+                      className="input"
+                      value={ttsVoice}
+                      onChange={(e) => setTtsVoice(e.target.value)}
+                      placeholder={
+                        ttsProvider === "elevenlabs"
+                          ? "np. 21m00Tcm4TlvDq8ikWAM"
+                          : ttsProvider === "fishaudio"
+                            ? "ID z adresu fish.audio/m/…"
+                            : "np. pl-moja-kopia"
+                      }
+                      spellCheck={false}
+                    />
+                    {ttsProvider === "elevenlabs" && (
+                      <div className="chips-inline">
+                        <button type="button" className="chip chip-sm" onClick={loadVoices} disabled={ttsBusy}>
+                          {ttsBusy ? "Pobieram…" : "Pobierz moje głosy"}
+                        </button>
+                      </div>
+                    )}
+                    {voiceList.length > 0 && (
+                      <div className="chips-inline">
+                        {voiceList.slice(0, 12).map((v) => (
+                          <button
+                            key={v.id}
+                            type="button"
+                            className="chip chip-sm"
+                            onClick={() => setTtsVoice(v.id)}
+                            title={v.id}
+                          >
+                            {v.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </label>
+
+                  <label className="field">
+                    <span className="field-label">Model głosu</span>
+                    <input
+                      className="input"
+                      value={ttsModel}
+                      onChange={(e) => setTtsModel(e.target.value)}
+                      spellCheck={false}
+                    />
+                    <div className="chips-inline">
+                      {presetTts.models.map((m) => (
+                        <button key={m} type="button" className="chip chip-sm" onClick={() => setTtsModel(m)}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="field-hint">
+                      {ttsProvider === "elevenlabs"
+                        ? "flash_v2_5 = najniższe opóźnienie (najlepsze do rozmowy), multilingual_v2 = najwyższa jakość."
+                        : ttsProvider === "fishaudio"
+                          ? "s1 to najnowszy model Fish Audio."
+                          : "Nazwa modelu zależna od serwera (np. xtts)."}
+                    </span>
+                  </label>
+
+                  <label className="field">
+                    <span className="field-label">Klonowanie własnego głosu</span>
+                    <span className="field-hint">
+                      {ttsProvider === "elevenlabs" &&
+                        "ElevenLabs: wejdź w Voices → Add voice → Instant Voice Cloning i wgraj 1–2 minuty czystego nagrania. Gotowy głos pojawi się na liście powyżej. Nie klonuj cudzego głosu bez zgody — to niezgodne z prawem i z regulaminem."}
+                      {ttsProvider === "fishaudio" &&
+                        "Fish Audio: na fish.audio utwórz model z próbki (30 s–3 min czystej mowy), a jego Reference ID wklej powyżej. Nie klonuj cudzego głosu bez zgody."}
+                      {ttsProvider === "local" &&
+                        "XTTS v2 klonuje głos z 6–30 sekund nagrania, bez treningu. Nagraj własny głos, połóż plik jako referencję na serwerze i podaj jego nazwę jako Voice ID."}
+                    </span>
+                  </label>
+
+                  <div className="row">
+                    <button className="btn btn-primary" onClick={saveTts}>
+                      Zapisz głos
+                    </button>
+                    <button className="btn btn-ghost" onClick={testTts} disabled={ttsBusy}>
+                      {ttsBusy ? "Generuję…" : "Przetestuj głos"}
+                    </button>
+                  </div>
+                  {ttsNote && <p className="saved-note">{ttsNote}</p>}
+                </>
+              )}
+
+              {ttsProvider === "browser" && (
+                <label className="field">
+                  <span className="field-label">Głos Zayry</span>
                 <select
                   className="input"
                   value={settings.voiceURI ?? ""}
@@ -260,7 +500,8 @@ export function SettingsPanel({
                     ? "Zalecany jest głos polski. W Chrome na Androidzie: Ustawienia → Dostępność → Zamiana tekstu na mowę → język polski."
                     : "Nie widzę polskiego głosu. Zainstaluj go w ustawieniach systemu (Zamiana tekstu na mowę), żeby Zayra mówiła po polsku."}
                 </span>
-              </label>
+                </label>
+              )}
 
               <label className="field">
                 <span className="field-label">

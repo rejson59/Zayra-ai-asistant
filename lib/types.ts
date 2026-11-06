@@ -24,6 +24,18 @@ export type DeviceProviderConfig = {
   baseUrl: string;
 };
 
+export type TtsProvider = "browser" | "elevenlabs" | "fishaudio" | "local";
+
+export type TtsSettings = {
+  provider: TtsProvider;
+  apiKey: string;
+  /** ElevenLabs: voice_id · Fish Audio: reference_id */
+  voiceId: string;
+  model: string;
+  /** tylko dla provider === "local" — serwer OpenAI-compatible (/v1/audio/speech) */
+  baseUrl: string;
+};
+
 export type Settings = {
   mode: AssistantMode;
   address: AddressForm;
@@ -33,6 +45,7 @@ export type Settings = {
   handsFree: boolean;
   device: DeviceProviderConfig | null;
   aboutMe: string;
+  tts: TtsSettings;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -44,25 +57,32 @@ export const DEFAULT_SETTINGS: Settings = {
   handsFree: false,
   device: null,
   aboutMe: "",
+  tts: {
+    provider: "browser",
+    apiKey: "",
+    voiceId: "",
+    model: "eleven_flash_v2_5",
+    baseUrl: "http://192.168.1.10:8000/v1",
+  },
 };
 
 export const PROVIDER_PRESETS: Record<
   Exclude<ProviderId, "server" | "demo">,
   { label: string; baseUrl: string; model: string; keyUrl: string; hint: string }
 > = {
+  gemini: {
+    label: "Google Gemini (darmowy)",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-2.5-flash",
+    keyUrl: "https://aistudio.google.com/apikey",
+    hint: "Najlepsza polszczyzna w darmowym limicie. Twój wybór domyślny.",
+  },
   groq: {
     label: "Groq (darmowy)",
     baseUrl: "https://api.groq.com/openai/v1",
     model: "llama-3.3-70b-versatile",
     keyUrl: "https://console.groq.com/keys",
     hint: "Szybki i darmowy. Klucz bez karty płatniczej.",
-  },
-  gemini: {
-    label: "Google Gemini (darmowy)",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    model: "gemini-2.5-flash",
-    keyUrl: "https://aistudio.google.com/apikey",
-    hint: "Hojny limit darmowy. Dobry do rozmów głosowych.",
   },
   openrouter: {
     label: "OpenRouter (modele :free)",

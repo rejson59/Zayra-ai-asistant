@@ -26,8 +26,6 @@ const CONNECTION_LABEL: Record<string, string> = {
 export default function Home() {
   const zayra = useZayra();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const progressTimer = useRef<number | null>(null);
   const lastSpokenRef = useRef("");
 
   const sendRef = useRef<(text: string) => void>(() => {});
@@ -37,43 +35,23 @@ export default function Home() {
     voiceURI: zayra.settings.voiceURI,
     autoSpeak: zayra.settings.autoSpeak,
     handsFree: zayra.settings.handsFree,
+    tts: zayra.settings.tts,
     onFinalTranscript: (text) => sendRef.current(text),
   });
 
-  const { speak, stopSpeaking, startListening, stopListening, state: speechState } = speech;
-
-  /** szacowany postęp czytania (Web Speech API nie raportuje go natywnie) */
-  const trackProgress = useCallback((text: string) => {
-    if (progressTimer.current) window.clearInterval(progressTimer.current);
-    const words = Math.max(1, text.split(/\s+/).length);
-    const seconds = (words / 165) * 60 / zayra.settings.voiceRate;
-    const started = performance.now();
-    setProgress(0.02);
-    progressTimer.current = window.setInterval(() => {
-      const elapsed = (performance.now() - started) / 1000;
-      const ratio = Math.min(1, elapsed / Math.max(1.2, seconds));
-      setProgress(ratio);
-      if (ratio >= 1 && progressTimer.current) {
-        window.clearInterval(progressTimer.current);
-        progressTimer.current = null;
-        window.setTimeout(() => setProgress(0), 600);
-      }
-    }, 120);
-  }, [zayra.settings.voiceRate]);
+  const { speak, stopSpeaking, startListening, stopListening, state: speechState, progress } = speech;
 
   const handleSend = useCallback(
     async (text: string) => {
       if (!text.trim()) return;
       stopSpeaking();
-      setProgress(0);
       const answer = await zayra.send(text);
       if (answer && zayra.settings.autoSpeak) {
         lastSpokenRef.current = answer;
-        trackProgress(answer);
-        speak(answer);
+        void speak(answer);
       }
     },
-    [speak, stopSpeaking, trackProgress, zayra]
+    [speak, stopSpeaking, zayra]
   );
 
   sendRef.current = handleSend;
@@ -84,7 +62,6 @@ export default function Home() {
       return;
     }
     stopSpeaking();
-    setProgress(0);
     startListening();
   }, [speechState, startListening, stopListening, stopSpeaking]);
 
@@ -92,14 +69,12 @@ export default function Home() {
     (text: string) => {
       if (speechState === "speaking") {
         stopSpeaking();
-        setProgress(0);
         return;
       }
       lastSpokenRef.current = text;
-      trackProgress(text);
-      speak(text);
+      void speak(text);
     },
-    [speak, speechState, stopSpeaking, trackProgress]
+    [speak, speechState, stopSpeaking]
   );
 
   /* Skróty klawiszowe — tablet z klawiaturą lub desktop. */
@@ -119,12 +94,6 @@ export default function Home() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleMic, handleSpeak, settingsOpen, speechState]);
-
-  useEffect(() => {
-    return () => {
-      if (progressTimer.current) window.clearInterval(progressTimer.current);
-    };
-  }, []);
 
   const busy = zayra.busy;
   const orbState = busy ? "thinking" : speechState;
@@ -158,10 +127,7 @@ export default function Home() {
           <button
             className="icon-btn"
             onClick={() => {
-              if (speechState === "speaking") {
-                stopSpeaking();
-                setProgress(0);
-              }
+              if (speechState === "speaking") stopSpeaking();
               zayra.updateSettings({ autoSpeak: !zayra.settings.autoSpeak });
             }}
             aria-label={zayra.settings.autoSpeak ? "Wyłącz czytanie na głos" : "Włącz czytanie na głos"}

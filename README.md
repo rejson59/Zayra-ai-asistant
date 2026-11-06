@@ -75,16 +75,68 @@ Zayra uruchomi się pełnoekranowo z własną ikoną — jak zwykła aplikacja.
 
 ## 3. Głos — jak to działa
 
-| Warstwa | Technologia | Uwagi |
-|---|---|---|
-| Rozpoznawanie mowy | Web Speech API (`SpeechRecognition`, `pl-PL`) | Chrome / Edge / Samsung Internet na Androidzie |
-| Synteza mowy | Web Speech API (`speechSynthesis`) | używa głosu systemowego, także offline |
+**Słuchanie** zawsze odbywa się w tablecie: Web Speech API (`SpeechRecognition`, `pl-PL`).
+Dźwięk z mikrofonu nie idzie do naszego serwera.
 
-**Żeby Zayra mówiła po polsku**, w Androidzie zainstaluj polski głos:
-`Ustawienia → Dostępność → Zamiana tekstu na mowę → preferowany silnik → język polski`.
-W aplikacji wybierz go w **Ustawienia → Głos**.
+**Mówienie** ma cztery silniki — wybierasz w **Ustawienia → Głos**:
 
-Aplikacja nie wysyła dźwięku do żadnego serwera — rozpoznawanie odbywa się w przeglądarce.
+| Silnik | Jakość | Koszt | Klonowanie głosu |
+|---|---|---|---|
+| **Głos systemowy (offline)** | syntezator, „androidowy" | darmowy | nie |
+| **ElevenLabs** | najbardziej ludzki | 10 tys. znaków/mies. darmowo, potem od 5 USD | tak (Instant Voice Cloning) |
+| **Fish Audio** | bardzo dobry, dobrze mówi po polsku | darmowe kredyty na start, potem tanio | tak |
+| **Własny serwer (XTTS / Piper)** | dobry, zależny od modelu | 0 zł | tak, lokalnie i prywatnie |
+
+### ElevenLabs (polecane na start)
+
+1. Klucz: [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys).
+2. **Ustawienia → Głos → ElevenLabs** → wklej klucz → **Pobierz moje głosy** → wybierz głos → **Zapisz głos**.
+3. Model: `eleven_flash_v2_5` — najniższe opóźnienie, najlepsze do rozmowy. `eleven_multilingual_v2` brzmi lepiej, ale odpowiada wolniej.
+4. **Przetestuj głos** — przeczytam próbkę, zanim zaczniesz rozmowę.
+
+**Klonowanie własnego głosu:** w ElevenLabs → *Voices → Add voice → Instant Voice Cloning*,
+wgraj 1–2 minuty czystego nagrania (bez muzyki i pogłosu). Głos pojawi się na liście w ustawieniach Zayry.
+
+### Fish Audio
+
+1. Klucz: [fish.audio/go-api](https://fish.audio/go-api/).
+2. Utwórz model głosu na fish.audio (próbka 30 s – 3 min) i skopiuj jego **Reference ID**.
+3. **Ustawienia → Głos → Fish Audio** → klucz + Reference ID → **Zapisz głos**.
+
+### Własny serwer głosu (0 zł, pełna prywatność)
+
+Nie da się sensownie „napisać modelu klonującego od zera" — ale można uruchomić gotowy otwarty model
+u siebie i klonować głos bez opłat. Najprościej przez serwer zgodny z OpenAI:
+
+```bash
+# na komputerze z NVIDIA (lub CPU, wolniej)
+pip install openedai-speech
+# w config.yaml wskaż silnik xtts i wgraj próbkę własnego głosu (6–30 s)
+openedai-speech
+```
+
+W Zayrze: **Ustawienia → Głos → Własny serwer**, adres np. `http://192.168.1.10:8000/v1`,
+Voice ID = nazwa Twojej próbki na serwerze. Tablet musi być w tej samej sieci Wi-Fi.
+
+**Co wybrać, jeśli chcesz klonować głos samodzielnie:**
+
+| Model | Polski | Licencja | Uwagi |
+|---|---|---|---|
+| **XTTS v2** (Coqui) | tak | CPML — **tylko niekomercyjnie** | klonuje z 6–30 s, bez treningu, najlepszy stosunek jakości do wysiłku |
+| **Piper** | tak | MIT | błyskawiczny na CPU, ale bez klonowania (głosy gotowe) |
+| **Fish Speech / OpenAudio** | tak | CC-BY-NC-SA | wymaga GPU, dobre efekty |
+| **OpenVoice v2** | nie (brak PL) | MIT | świetny, ale nie mówi po polsku |
+
+Zasada: **klonuj tylko własny głos albo głos, na który masz pisemną zgodę.** Klonowanie cudzego głosu
+bez zgody jest niezgodne z prawem (wizerunek) i z regulaminami dostawców.
+
+### Głos systemowy
+
+Jeśli chcesz zostać przy darmowym, offline: w Androidzie zainstaluj polski głos
+(`Ustawienia → Dostępność → Zamiana tekstu na mowę → język polski`) i wybierz go w Zayrze.
+
+Gdy model głosu zawiedzie (brak internetu, wyczerpane kredyty), Zayra **nie przerywa rozmowy** —
+czyta odpowiedź głosem systemowym i pokazuje krótką notkę, co poszło nie tak.
 
 ---
 
@@ -92,8 +144,8 @@ Aplikacja nie wysyła dźwięku do żadnego serwera — rozpoznawanie odbywa si�
 
 | Dostawca | Domyślny model | Klucz | Charakter |
 |---|---|---|---|
+| **Google Gemini** | `gemini-2.5-flash` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | **domyślny** — dobra polszczyzna, hojne limity |
 | **Groq** | `llama-3.3-70b-versatile` | [console.groq.com/keys](https://console.groq.com/keys) | najszybszy, świetny do głosu |
-| **Google Gemini** | `gemini-2.5-flash` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | hojne limity, dobra polszczyzna |
 | **OpenRouter** | `meta-llama/llama-3.3-70b-instruct:free` | [openrouter.ai/keys](https://openrouter.ai/keys) | wybór modeli (`:free`) |
 | **Własny serwer** | `llama3.1` | — | Ollama / LM Studio, 100% lokalnie |
 
@@ -126,6 +178,8 @@ app/
   globals.css           design system Zayry
   api/chat/route.ts     proxy do modelu (klucz może zostać na serwerze)
   api/config/route.ts   informuje aplikację, czy serwer ma klucz
+  api/tts/route.ts      proxy do ElevenLabs / Fish Audio
+  api/tts/voices/route.ts  lista głosów ElevenLabs
 components/
   Orb.tsx               kula głosowa (idle / słucham / myślę / mówię)
   Thread.tsx            wątek rozmowy, podpowiedzi startowe
@@ -139,6 +193,7 @@ lib/
   persona.ts            CHARAKTER ZAYRY — tu zmieniasz jej osobowość i zasady
   providers.ts          Groq / Gemini / OpenRouter / własny serwer (SSE)
   chat.ts               wybór ścieżki: tablet → serwer
+  tts.ts                synteza mowy: system / ElevenLabs / Fish Audio / własny serwer
   storage.ts            localStorage: ustawienia, historia, pamięć
   demo.ts               uczciwe odpowiedzi bez modelu
   types.ts              typy współdzielone
