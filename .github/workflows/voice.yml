@@ -62,17 +62,25 @@ jobs:
       - name: Clone Piper (fork z treningiem)
         run: git clone --depth 1 https://github.com/rmcpantoja/piper piper-src
 
-      - name: Patch Piper for CPU (fork zakłada CUDA)
+      - name: Patch Piper for CPU + zgodność checkpointu
         run: |
           python - <<'PY'
           import pathlib
           p = pathlib.Path("piper-src/src/python/piper_train/__main__.py")
           s = p.read_text()
+          # 1) Fork zakłada CUDA — zabezpiecz ścieżkę CPU.
           old = "return torch.cuda.get_device_capability(0)[0] >= 7"
           new = "return torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 7"
-          assert old in s, "nie znaleziono linii do patcha"
-          p.write_text(s.replace(old, new))
-          print("Załatan supports_tensor_cores() dla CPU")
+          assert old in s, "nie znaleziono linii CUDA do patcha"
+          s = s.replace(old, new)
+          # 2) Nowy checkpoint (piper1-gpl) ma dodatkowy dyskryminator MRD, którego
+          #    fork nie zna. strict_loading=False wczytuje generator+MPD, pomija MRD.
+          old2 = "    trainer.fit(model, ckpt_path=args.resume_from_checkpoint)"
+          new2 = "    model.strict_loading = False\n    trainer.fit(model, ckpt_path=args.resume_from_checkpoint)"
+          assert old2 in s, "nie znaleziono linii trainer.fit do patcha"
+          s = s.replace(old2, new2)
+          p.write_text(s)
+          print("Załatan: CPU guard + strict_loading=False")
           PY
 
       - name: Install Python deps
