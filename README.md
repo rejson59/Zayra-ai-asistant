@@ -4,7 +4,7 @@ Moja osobista asystentka głosowa. Minimalistyczny interfejs: jedna fala, jeden 
 
 ## Stack
 
-Vite + React + TypeScript · Tailwind v4 · Motion · Lucide · Canvas 2D
+Vite + React + TypeScript · Tailwind v4 · Motion · Lucide · Canvas 2D · Web Audio API · Piper (WASM/ONNX)
 
 ## Start
 
@@ -19,17 +19,24 @@ npm run dev
 - **Akcent**: jeden chłodny błękit, żadnych gradientów.
 - **Zaokrąglenia**: pigułki i miękkie 24 px.
 - **Ikony zamiast etykiet** — nazwy dopiero w tooltipach.
-- **Serce interfejsu**: 9 słupków-pigułek, przez które płynie fala od lewej do prawej.
+- **Serce interfejsu**: 9 słupków-pigułek, przez które płynie organiczna fala od lewej do prawej (tempo napędzane głośnością).
 - **Stany**: gotowa → słucham → myślę → mówię.
 
-## Audio (bez klucza API)
+## Audio (bez płatnych API)
 
-- **Mikrofon**: Web Audio API (`AnalyserNode`) — fala reaguje na prawdziwy głos w czasie rzeczywistym (RMS + pasma logarytmiczne). cisza ~2,4 s po wykryciu mowy kończy słuchanie.
-- **Głos Zayry**: `speechSynthesis` przeglądarki (pl-PL), napisy synchronizowane ze słowami (`onboundary`); obwiednia fali podszywana pod słowa.
-- **Fallback**: gdy brak mikrofonu / TTS — płynna symulacja sylabiczna.
-- „Mózg” (LLM) wciąż demo — zdanie jest przykładowe; API podłączymy później.
+- **Mikrofon**: Web Audio API (`AnalyserNode`) — fala reaguje na prawdziwy głos w czasie rzeczywistym. Cisza ~2,4 s po wykryciu mowy kończy słuchanie.
+- **Głos Zayry — Piper**: lokalny syntezator neuronowy w przeglądarce (`@diffusionstudio/vits-web`, ONNX Runtime Web). Działa na CPU, offline po pobraniu modelu (cache OPFS). Fala reaguje na **prawdziwe audio** głosu Zayry.
+  - Gotowe polskie głosy: `gosia`, `darkman`, `mc_speech`.
+  - **Własny głos**: wgraj `model.onnx` + `model.onnx.json` w ustawieniach głosu.
+  - Fallback: `speechSynthesis` przeglądarki, gdy Piper niedostępny.
+- **„Mózg” (LLM)**: wciąż demo (przykładowe zdanie) — API podłączymy później.
 
-> Jeśli mikrofon jest zablokowany w osadzonym podglądzie, otwórz podgląd w nowej karcie i zezwól na mikrofon.
+## Własny głos (darmowy trening)
+
+Patrz **[`training/README.md`](training/README.md)** oraz notebook **`training/Zayra_Voice_Colab.ipynb`**:
+nagranie → fine‑tune Piper na darmowym Colab (T4) → eksport ONNX → wgranie do Zayry. Po treningu głos działa lokalnie na słabym CPU, offline, bez API.
+
+> Klonuj wyłącznie głosy za zgodą. Jeśli mikrofon jest zablokowany w osadzonym podglądzie, otwórz podgląd w nowej karcie.
 
 ## Skróty
 

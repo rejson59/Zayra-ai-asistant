@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Captions, Info, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
+import type { VoiceId } from '@diffusionstudio/vits-web';
 import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
 import { VoiceEngine } from './engine/audio';
 import { speak, ttsSupported } from './engine/tts';
+import { synthesize } from './engine/piper';
 import { Stage } from './components/Stage';
 import { IconButton } from './components/IconButton';
 import { StatusPill } from './components/StatusPill';
 import { MicButton } from './components/MicButton';
 import { LabPanel } from './components/LabPanel';
 import { HelpMenu } from './components/HelpMenu';
+import { VoiceSettings } from './components/VoiceSettings';
 
 const SENTENCE =
   'Jasne. Masz dziś trzy spotkania: o dziesiątej przegląd projektu, w południe lunch z Anną, a po południu krótki sync z zespołem.';
@@ -33,6 +36,9 @@ export default function App() {
   const [state, setState] = useState<VoiceState>('idle');
   const [captions, setCaptions] = useState(() => localStorage.getItem('zayra-captions') !== 'off');
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem('zayra-voice') !== 'off');
+  const [voiceId, setVoiceId] = useState<VoiceId>(
+    () => (localStorage.getItem('zayra-voice-id') as VoiceId) || 'pl_PL-gosia-medium',
+  );
   const [micLive, setMicLive] = useState(false);
   const [revealed, setRevealed] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -43,6 +49,9 @@ export default function App() {
   revealedRef.current = revealed;
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
+  const voiceIdRef = useRef(voiceId);
+  voiceIdRef.current = voiceId;
+  const genRef = useRef(0);
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const captionTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -70,7 +79,7 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   };
 
-  const startCaptionTimer = () => {
+  const startCaptionTimer = (interval = WORD_MS) => {
     if (captionTimer.current) clearInterval(captionTimer.current);
     captionTimer.current = setInterval(() => {
       setRevealed((r) => {
@@ -83,19 +92,47 @@ export default function App() {
         }
         return r + 1;
       });
-    }, WORD_MS);
+    }, interval);
   };
 
   const finishSpeaking = () => {
+    genRef.current++;
     clearTimers();
     cancelSpeech();
     engine.stopTts();
+    engine.stopPlayback();
     setState('idle');
   };
 
-  const startSpeaking = () => {
-    setState('speaking');
+  const startSpeaking = async () => {
     setRevealed(0);
+    const gen = ++genRef.current;
+
+    // Piper: prawdziwy głos + analiza prawdziwego audio
+    if (voiceOnRef.current) {
+      setState('thinking');
+      try {
+        const blob = await synthesize(SENTENCE, voiceIdRef.current);
+        if (gen !== genRef.current) return;
+        const buffer = await engine.decodeAudio(blob);
+        if (gen !== genRef.current) return;
+        const durMs = buffer.duration * 1000;
+        await engine.startPlayback(buffer, () => finishSpeaking());
+        if (gen !== genRef.current) {
+          engine.stopPlayback();
+          return;
+        }
+        setState('speaking');
+        startCaptionTimer(Math.max(60, durMs / WORDS.length));
+        later(() => finishSpeaking(), durMs + 2500);
+        return;
+      } catch {
+        if (gen !== genRef.current) return;
+      }
+    }
+
+    // fallback: głos przeglądarki lub symulacja
+    setState('speaking');
     if (voiceOnRef.current && ttsSupported()) {
       engine.startTts();
       let gotBoundary = false;
@@ -132,13 +169,15 @@ export default function App() {
     engine.disableMic();
     setMicLive(false);
     setState('thinking');
-    later(startSpeaking, 900);
+    later(() => void startSpeaking(), 600);
   };
 
   const beginListening = () => {
+    genRef.current++;
     clearTimers();
     cancelSpeech();
     engine.stopTts();
+    engine.stopPlayback();
     setState('listening');
     engine.resetVad();
     setRevealed(0);
@@ -155,9 +194,11 @@ export default function App() {
   };
 
   const stop = () => {
+    genRef.current++;
     clearTimers();
     cancelSpeech();
     engine.stopTts();
+    engine.stopPlayback();
     engine.disableMic();
     setMicLive(false);
     setState('idle');
@@ -165,21 +206,25 @@ export default function App() {
   };
 
   const runDemo = () => {
+    genRef.current++;
     clearTimers();
     cancelSpeech();
     engine.stopTts();
+    engine.stopPlayback();
     engine.disableMic();
     setMicLive(false);
     setState('listening');
     setRevealed(0);
     later(() => setState('thinking'), 2300);
-    later(startSpeaking, 3500);
+    later(() => void startSpeaking(), 3500);
   };
 
   const force = (s: VoiceState) => {
+    genRef.current++;
     clearTimers();
     cancelSpeech();
     engine.stopTts();
+    engine.stopPlayback();
     if (s !== 'listening') {
       engine.disableMic();
       setMicLive(false);
@@ -194,26 +239,20 @@ export default function App() {
     const nv = !voiceOnRef.current;
     setVoiceOn(nv);
     if (!nv && stateRef.current === 'speaking') {
+      genRef.current++;
       clearTimers();
       cancelSpeech();
       engine.stopTts();
+      engine.stopPlayback();
       startCaptionTimer();
       const remaining = Math.max(600, (WORDS.length - revealedRef.current) * WORD_MS + 400);
       later(() => finishSpeaking(), remaining);
     }
   };
 
-  const actionsRef = useRef({
-    micAction,
-    stop,
-    toggleTheme,
-    toggleCaptions,
-    toggleVoice,
-    finishListening,
-  });
+  const actionsRef = useRef({ micAction, stop, toggleTheme, toggleCaptions, toggleVoice, finishListening });
   actionsRef.current = { micAction, stop, toggleTheme, toggleCaptions, toggleVoice, finishListening };
 
-  // motyw
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('zayra-theme', theme);
@@ -225,12 +264,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('zayra-captions', captions ? 'on' : 'off');
   }, [captions]);
-
   useEffect(() => {
     localStorage.setItem('zayra-voice', voiceOn ? 'on' : 'off');
   }, [voiceOn]);
+  useEffect(() => {
+    localStorage.setItem('zayra-voice-id', voiceId);
+  }, [voiceId]);
 
-  // silnik + skróty klawiszowe
   useEffect(() => {
     engine.onListeningEnd = () => actionsRef.current.finishListening();
     window.speechSynthesis?.getVoices();
@@ -268,7 +308,6 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      {/* toast */}
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -283,7 +322,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* nagłówek */}
       <header className="flex items-center justify-between px-6 py-5 sm:px-8">
         <div className="flex items-center gap-2.5">
           <h1 className="font-display text-[27px] leading-none tracking-tight italic">Zayra</h1>
@@ -298,6 +336,7 @@ export default function App() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <VoiceSettings voiceId={voiceId} onVoiceChange={setVoiceId} />
           <IconButton
             label={voiceOn ? 'Wycisz głos Zayry' : 'Włącz głos Zayry'}
             active={voiceOn}
@@ -305,10 +344,7 @@ export default function App() {
           >
             {voiceOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </IconButton>
-          <IconButton
-            label={theme === 'dark' ? 'Jasny motyw' : 'Ciemny motyw'}
-            onClick={toggleTheme}
-          >
+          <IconButton label={theme === 'dark' ? 'Jasny motyw' : 'Ciemny motyw'} onClick={toggleTheme}>
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
                 key={theme}
@@ -326,14 +362,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* scena */}
       <main className="flex min-h-0 flex-1 items-center px-6">
         <div className="mx-auto h-[clamp(180px,36vh,320px)] w-full max-w-[860px]">
           <Stage concept="bars" state={state} theme={theme} engine={engine} />
         </div>
       </main>
 
-      {/* sterowanie */}
       <footer className="relative flex flex-col items-center gap-5 px-6 pb-7">
         <StatusPill state={state} />
 
