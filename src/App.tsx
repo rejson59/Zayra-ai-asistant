@@ -6,7 +6,7 @@ import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
 import { VoiceEngine } from './engine/audio';
 import { speak, ttsSupported } from './engine/tts';
-import { synthesize } from './engine/piper';
+import { CUSTOM_SLOT, synthesize, tryLoadPublishedVoice } from './engine/piper';
 import { Stage } from './components/Stage';
 import { IconButton } from './components/IconButton';
 import { StatusPill } from './components/StatusPill';
@@ -270,6 +270,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('zayra-voice-id', voiceId);
   }, [voiceId]);
+
+  // auto-wczytaj głos opublikowany przez GitHub Actions (jeśli istnieje)
+  useEffect(() => {
+    void tryLoadPublishedVoice().then((ok) => {
+      if (ok && !localStorage.getItem('zayra-voice-id')) setVoiceId(CUSTOM_SLOT);
+    });
+  }, []);
 
   useEffect(() => {
     engine.onListeningEnd = () => actionsRef.current.finishListening();

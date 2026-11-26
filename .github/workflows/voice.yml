@@ -1,0 +1,129 @@
+name: Build Zayra Voice
+
+# Automatyczny pipeline: próbka głosu -> dataset -> transkrypcja -> fine-tune Piper
+# (CPU, bez GPU) -> eksport ONNX -> publikacja w public/voice (Zayra wczyta go sama).
+# Uruchom ręcznie (Actions -> Build Zayra Voice -> Run workflow) albo przez push
+# nowego pliku do training/sample/.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_voice:
+        description: "Polski model bazowy"
+        type: choice
+        default: darkman-medium
+        options: [darkman-medium, gosia-medium, mc_speech-medium]
+      epochs:
+        description: "Liczba epok treningu (więcej = lepiej, ale dłużej)"
+        default: "1500"
+      whisper_model:
+        description: "Rozmiar Whispera do transkrypcji"
+        type: choice
+        default: medium
+        options: [small, medium, large-v3]
+  push:
+    paths:
+      - "training/sample/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      WS: ${{ github.workspace }}
+      DS: ${{ github.workspace }}/training/dataset
+      OUT: ${{ github.workspace }}/training/out
+      CACHE: ${{ github.workspace }}/training/cache
+      CKPT: ${{ github.workspace }}/training/pretrained.ckpt
+      BASE_VOICE: ${{ github.event.inputs.base_voice || 'darkman-medium' }}
+      EPOCHS: ${{ github.event.inputs.epochs || '1500' }}
+      WHISPER_MODEL: ${{ github.event.inputs.whisper_model || 'medium' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1 ffmpeg
+
+      - name: Clone Piper (fork z treningiem)
+        run: git clone --depth 1 https://github.com/rmcpantoja/piper piper-src
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install cython piper-phonemize==1.1.0 "numpy==1.26" librosa onnxruntime \
+            pytorch-lightning faster-whisper soundfile scipy gdown
+          cd piper-src/src/python && bash build_monotonic_align.sh
+
+      - name: Prepare dataset
+        run: python training/prepare_dataset.py
+
+      - name: Transcribe (Whisper, pl)
+        run: python training/transcribe.py
+
+      - name: Fetch base checkpoint
+        run: python training/fetch_base.py
+
+      - name: Preprocess
+        working-directory: piper-src/src/python
+        run: |
+          python -m piper_train.preprocess \
+            --language pl \
+            --input-dir "$DS" \
+            --cache-dir "$CACHE" \
+            --output-dir "$OUT" \
+            --dataset-name zayra \
+            --dataset-format ljspeech \
+            --sample-rate 22050 \
+            --single-speaker
+
+      - name: Train (fine-tune, CPU)
+        working-directory: piper-src/src/python
+        run: |
+          python -m piper_train \
+            --dataset-dir "$OUT" \
+            --accelerator cpu --devices 1 \
+            --batch-size 4 \
+            --validation-split 0 --num-test-examples 0 \
+            --quality medium \
+            --checkpoint-epochs 50 --num_ckpt 0 --save_last True \
+            --max_epochs "$EPOCHS" \
+            --resume_from_checkpoint "$CKPT" \
+            --precision 32
+
+      - name: Export ONNX
+        working-directory: piper-src/src/python
+        run: |
+          mkdir -p "$WS/public/voice"
+          LAST=$(find "$OUT/lightning_logs" -name last.ckpt | sort | tail -1)
+          echo "Checkpoint: $LAST"
+          python -m piper_train.export_onnx "$LAST" "$WS/public/voice/zayra.onnx"
+          if [ ! -f "$WS/public/voice/zayra.onnx.json" ]; then
+            cp "$OUT/config.json" "$WS/public/voice/zayra.onnx.json"
+          fi
+          ls -la "$WS/public/voice"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zayra-voice
+          path: public/voice/
+
+      - name: Commit & push voice
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/voice
+          git commit -m "feat(voice): auto-trained Zayra voice [skip ci]" || echo "Brak zmian"
+          git push

@@ -4,7 +4,23 @@ Cel: uzyskać **ulubiony / własny głos** dla Zayry **za darmo**, **bez płatny
 
 Droga: nagranie → fine‑tune **Piper** na darmowym **Google Colab (T4)** → eksport **ONNX** → wgranie do Zayry. Po treningu wszystko działa lokalnie.
 
-## Czego potrzebujesz
+## Ścieżka A — automatycznie (GitHub Actions, polecane)
+
+Nie musisz nic klikać w Colab. Workflow **`.github/workflows/voice.yml`** robi wszystko na darmowym runnerze CPU (bez GPU):
+
+1. Wrzuć próbkę głosu do **`training/sample/`** (np. `source.mp3`) i wypchnij na gałąź.
+2. Workflow uruchomi się sam (push do `training/sample/**`) albo ręcznie: **Actions → Build Zayra Voice → Run workflow**.
+3. Kroki: przygotowanie datasetu → transkrypcja Whisper (pl) → fine‑tune Piper → eksport ONNX → zapis do **`public/voice/zayra.onnx`** + commit.
+4. Zayra **sama wczyta** ten głos przy starcie (auto‑instalacja do OPFS) i będzie nim mówić.
+
+Parametry (przy ręcznym uruchomieniu): `base_voice` (darkman/gosia/mc_speech), `epochs` (domyślnie 1500), `whisper_model`.
+
+> **Uwaga o jakości:** pojedyncza krótka próbka (~15 s) da głos ograniczony. Im więcej czystych nagrań wrzucisz do `training/sample/` (kilka minut), tym lepszy rezultat. Mały dataset = szybki trening na CPU; duży = dłużej (limit zadania ~6 h, można ponowić).
+> **Minuty Actions:** repo publiczne = bez limitu; prywatne = 2000 min/mies. Trening zużywa część tej puli.
+
+## Ścieżka B — ręcznie (Colab, gdy chcesz GPU / pełną kontrolę)
+
+### Czego potrzebujesz
 - Konto Google (darmowy Colab z GPU T4).
 - **10–30 minut** nagrania docelowego głosu.
 - Przeglądarka (Chrome/Edge najlepiej — WASM + OPFS).

@@ -79,3 +79,24 @@ export async function removeCustomVoice(): Promise<void> {
 }
 
 export const isCustom = (id: VoiceId) => id === CUSTOM_SLOT;
+
+/**
+ * Wczytuje głos opublikowany przez GitHub Actions (/voice/zayra.onnx).
+ * Jeśli własny głos jest już zainstalowany, nie nadpisuje go.
+ * Zwraca true, gdy własny głos (z repo lub wgrany) jest dostępny.
+ */
+export async function tryLoadPublishedVoice(): Promise<boolean> {
+  try {
+    if (await hasCustomVoice()) return true;
+    const head = await fetch('/voice/zayra.onnx', { method: 'HEAD' });
+    if (!head.ok) return false;
+    const [onnx, cfg] = await Promise.all([
+      fetch('/voice/zayra.onnx').then((r) => r.blob()),
+      fetch('/voice/zayra.onnx.json').then((r) => r.blob()),
+    ]);
+    await installCustomVoice(onnx, cfg);
+    return true;
+  } catch {
+    return false;
+  }
+}

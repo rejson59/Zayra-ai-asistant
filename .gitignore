@@ -4,3 +4,8 @@ dist
 .env.*
 *.local
 .DS_Store
+
+# generated training dataset
+training/dataset/
+training/sample/*.wav
+.venv/
