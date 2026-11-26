@@ -1,5 +1,16 @@
 DEBUG:piper_train:Namespace(dataset_dir='/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/out', checkpoint_epochs=50, quality='medium', resume_from_single_speaker_checkpoint=None, batch_size=4, validation_split=0.0, num_test_examples=0, max_phoneme_ids=None, hidden_channels=192, inter_channels=192, filter_channels=768, n_layers=6, n_heads=2, lr_decay=0.999875, lr_reduce_enabled=False, lr_reduce_factor=0.5, lr_reduce_patience=10, show_plot=False, plot_save_path=None, learning_rate=0.0002, weight_decay=0.01, override_learning_rate=False, grad_clip=None, accelerator='cpu', devices=1, log_every_n_steps=None, max_epochs=1500, seed=1234, random_seed=False, resume_from_checkpoint='/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/pretrained.ckpt', precision='32', num_ckpt=0, default_root_dir=None, save_last=True, monitor='val_loss', monitor_mode='min', early_stop_patience=0)
 DEBUG:piper_train:Using manual seed: 1234
+DEBUG:piper_train:Checkpoints will be saved every 50 epoch(s)
+DEBUG:piper_train:0 Checkpoints will be saved
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/logger_connector/logger_connector.py:75: Starting from v1.9.0, `tensorboardX` has been removed as a dependency of the `pytorch_lightning` package, due to potential conflicts with other packages in the ML ecosystem. For this reason, `logger=True` will use `CSVLogger` as the default logger, unless the `tensorboard` or `tensorboardX` packages are found. Please `pip install lightning[extra]` or one of them to enable TensorBoard support by default
+/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/nn/utils/weight_norm.py:134: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+DEBUG:vits.dataset:Loading dataset: /home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/out/dataset.jsonl
+Restoring states from the checkpoint path at /home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/pretrained.ckpt
+/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/utilities/migration/utils.py:56: The loaded checkpoint was produced with Lightning v2.6.6, which is newer than your current Lightning version: v2.4.0
 Traceback (most recent call last):
   File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/runpy.py", line 196, in _run_module_as_main
     return _run_code(code, main_globals, None,
@@ -7,14 +18,23 @@ Traceback (most recent call last):
     exec(code, run_globals)
   File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 278, in <module>
     main()
-  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 136, in main
-    if supports_tensor_cores():
-  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 133, in supports_tensor_cores
-    return torch.cuda.get_device_capability(0)[0] >= 7
-  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 451, in get_device_capability
-    prop = get_device_properties(device)
-  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 465, in get_device_properties
-    _lazy_init()  # will define _get_device_properties
-  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 305, in _lazy_init
-    raise AssertionError("Torch not compiled with CUDA enabled")
-AssertionError: Torch not compiled with CUDA enabled
+  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 255, in main
+    trainer.fit(model, ckpt_path=args.resume_from_checkpoint)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 538, in fit
+    call._call_and_handle_interrupt(
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 574, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 950, in _run
+    self._checkpoint_connector._restore_modules_and_callbacks(ckpt_path)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/checkpoint_connector.py", line 398, in _restore_modules_and_callbacks
+    self.restore_model()
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/checkpoint_connector.py", line 275, in restore_model
+    self.trainer.strategy.load_model_state_dict(
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 371, in load_model_state_dict
+    self.lightning_module.load_state_dict(checkpoint["state_dict"], strict=strict)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2215, in load_state_dict
+    raise RuntimeError('Error(s) in loading state_dict for {}:\n\t{}'.format(
+RuntimeError: Error(s) in loading state_dict for VitsModel:
+	Unexpected key(s) in state_dict: "model_mrd.discriminators.0.convs.0.bias", "model_mrd.discriminators.0.convs.0.weight_g", "model_mrd.discriminators.0.convs.0.weight_v", "model_mrd.discriminators.0.convs.1.bias", "model_mrd.discriminators.0.convs.1.weight_g", "model_mrd.discriminators.0.convs.1.weight_v", "model_mrd.discriminators.0.convs.2.bias", "model_mrd.discriminators.0.convs.2.weight_g", "model_mrd.discriminators.0.convs.2.weight_v", "model_mrd.discriminators.0.convs.3.bias", "model_mrd.discriminators.0.convs.3.weight_g", "model_mrd.discriminators.0.convs.3.weight_v", "model_mrd.discriminators.0.convs.4.bias", "model_mrd.discriminators.0.convs.4.weight_g", "model_mrd.discriminators.0.convs.4.weight_v", "model_mrd.discriminators.0.conv_post.bias", "model_mrd.discriminators.0.conv_post.weight_g", "model_mrd.discriminators.0.conv_post.weight_v", "model_mrd.discriminators.1.convs.0.bias", "model_mrd.discriminators.1.convs.0.weight_g", "model_mrd.discriminators.1.convs.0.weight_v", "model_mrd.discriminators.1.convs.1.bias", "model_mrd.discriminators.1.convs.1.weight_g", "model_mrd.discriminators.1.convs.1.weight_v", "model_mrd.discriminators.1.convs.2.bias", "model_mrd.discriminators.1.convs.2.weight_g", "model_mrd.discriminators.1.convs.2.weight_v", "model_mrd.discriminators.1.convs.3.bias", "model_mrd.discriminators.1.convs.3.weight_g", "model_mrd.discriminators.1.convs.3.weight_v", "model_mrd.discriminators.1.convs.4.bias", "model_mrd.discriminators.1.convs.4.weight_g", "model_mrd.discriminators.1.convs.4.weight_v", "model_mrd.discriminators.1.conv_post.bias", "model_mrd.discriminators.1.conv_post.weight_g", "model_mrd.discriminators.1.conv_post.weight_v", "model_mrd.discriminators.2.convs.0.bias", "model_mrd.discriminators.2.convs.0.weight_g", "model_mrd.discriminators.2.convs.0.weight_v", "model_mrd.discriminators.2.convs.1.bias", "model_mrd.discriminators.2.convs.1.weight_g", "model_mrd.discriminators.2.convs.1.weight_v", "model_mrd.discriminators.2.convs.2.bias", "model_mrd.discriminators.2.convs.2.weight_g", "model_mrd.discriminators.2.convs.2.weight_v", "model_mrd.discriminators.2.convs.3.bias", "model_mrd.discriminators.2.convs.3.weight_g", "model_mrd.discriminators.2.convs.3.weight_v", "model_mrd.discriminators.2.convs.4.bias", "model_mrd.discriminators.2.convs.4.weight_g", "model_mrd.discriminators.2.convs.4.weight_v", "model_mrd.discriminators.2.conv_post.bias", "model_mrd.discriminators.2.conv_post.weight_g", "model_mrd.discriminators.2.conv_post.weight_v". 
