@@ -1,0 +1,35 @@
+=== curl -I (headers) ===
+HTTP/2 404 
+content-type: text/plain; charset=utf-8
+content-length: 15
+date: Thu, 26 Nov 2026 17:46:36 GMT
+etag: W/"f-mY2VvLxuxB7KhsoOdQTlMTccuAQ"
+x-powered-by: huggingface-moon
+x-request-id: Root=1-6b08707c-5aa57c515b457e7b09f0121e
+ratelimit: "resolvers";r=2999;t=284
+ratelimit-policy: "fixed window";"resolvers";q=3000;w=300
+cross-origin-opener-policy: same-origin
+referrer-policy: strict-origin-when-cross-origin
+access-control-max-age: 86400
+access-control-allow-origin: https://huggingface.co
+vary: Origin
+access-control-expose-headers: X-Repo-Commit,X-HF-Warning,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash,RateLimit,RateLimit-Policy
+x-repo-commit: ca6592b0c5190f78c20f202b40477d71037b2ec2
+accept-ranges: bytes
+x-hf-warning: unauthenticated; Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+x-hub-cache: MISS
+x-error-code: EntryNotFound
+x-error-message: Entry not found
+x-cache: Error from cloudfront
+via: 1.1 548d9524429f0644c4aaa89a2a6aa54a.cloudfront.net (CloudFront)
+x-amz-cf-pop: ORD58-P13
+alt-svc: h3=":443"; ma=86400
+x-amz-cf-id: qXFGy0QgelfvEEmx-Qs0pGQf0RlSNUUntjEQZwjBwygeiKj9rhdJ_Q==
+strict-transport-security: max-age=31536000
+
+
+
+=== final http_code ===
+404
+=== hf_hub_download ERR ===
+RemoteEntryNotFoundError('404 Client Error. (Request ID: Root=1-6b08707c-19636f24352f3e3321624238;3b0c6368-4e1a-48fd-9101-7c082a5449e6)\n\nEntry Not Found for url: https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/pl/pl_PL/darkman/medium/epoch%3D4909-step%3D1454360.ckpt.')
