@@ -63,7 +63,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install cython piper-phonemize==1.1.0 "numpy==1.26" librosa onnxruntime \
-            pytorch-lightning faster-whisper soundfile scipy gdown
+            pytorch-lightning faster-whisper huggingface_hub soundfile scipy gdown
           cd piper-src/src/python && bash build_monotonic_align.sh
 
       - name: Prepare dataset
