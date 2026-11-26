@@ -19,7 +19,7 @@ npm run dev
 - **Akcent**: jeden chłodny błękit, żadnych gradientów.
 - **Zaokrąglenia**: pigułki i miękkie 24 px.
 - **Ikony zamiast etykiet** — nazwy dopiero w tooltipach.
-- **Serce interfejsu**: 17 lustrzanych słupków-pigułek ze sprężynowym overshootem.
+- **Serce interfejsu**: 9 słupków-pigułek, przez które płynie fala od lewej do prawej.
 - **Stany**: gotowa → słucham → myślę → mówię. Głos na razie symulowany (sylaby + pauzy); interfejs gotowy na dane z mikrofonu / TTS.
 
 ## Skróty

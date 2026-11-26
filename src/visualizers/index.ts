@@ -17,7 +17,7 @@ export interface Concept {
 
 export const CONCEPTS: Concept[] = [
   { id: 'ribbon', label: 'Wstęga', hint: 'Płynące warstwy linii', icon: Waves, draw: drawRibbon },
-  { id: 'bars', label: 'Słupki', hint: 'Lustrzane pigułki widma', icon: AudioLines, draw: createBars() },
+  { id: 'bars', label: 'Słupki', hint: 'Fala płynąca przez pigułki', icon: AudioLines, draw: createBars() },
   { id: 'strings', label: 'Struny', hint: 'Drgające struny instrumentu', icon: AlignJustify, draw: drawStrings },
   { id: 'dots', label: 'Kropki', hint: 'Jedwabna siatka punktów', icon: Grip, draw: drawDots },
 ];
