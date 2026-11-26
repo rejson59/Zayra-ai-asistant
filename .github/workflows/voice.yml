@@ -24,6 +24,10 @@ on:
   push:
     paths:
       - "training/sample/**"
+      - "training/fetch_base.py"
+      - "training/prepare_dataset.py"
+      - "training/transcribe.py"
+      - ".github/workflows/voice.yml"
 
 permissions:
   contents: write

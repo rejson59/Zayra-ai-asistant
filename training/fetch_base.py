@@ -12,8 +12,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "pretrained.ckpt")
 
 BASE = {
-    "darkman-medium": "pl/pl_PL/darkman/medium/epoch=4909-step=1454360.ckpt",
-    "gosia-medium": "pl/pl_PL/gosia/medium/epoch=5001-step=1457672.ckpt",
+    "darkman-medium": "pl/pl_PL/darkman/medium/epoch=1999-step=92000.ckpt",
+    "gosia-medium": "pl/pl_PL/gosia/medium/epoch=1999-step=92000.ckpt",
     "mc_speech-medium": "pl/pl_PL/mc_speech/medium/epoch=2531-step=1906774.ckpt",
 }
 REPO = "rhasspy/piper-checkpoints"
