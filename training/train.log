@@ -1,0 +1,20 @@
+DEBUG:piper_train:Namespace(dataset_dir='/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/out', checkpoint_epochs=50, quality='medium', resume_from_single_speaker_checkpoint=None, batch_size=4, validation_split=0.0, num_test_examples=0, max_phoneme_ids=None, hidden_channels=192, inter_channels=192, filter_channels=768, n_layers=6, n_heads=2, lr_decay=0.999875, lr_reduce_enabled=False, lr_reduce_factor=0.5, lr_reduce_patience=10, show_plot=False, plot_save_path=None, learning_rate=0.0002, weight_decay=0.01, override_learning_rate=False, grad_clip=None, accelerator='cpu', devices=1, log_every_n_steps=None, max_epochs=1500, seed=1234, random_seed=False, resume_from_checkpoint='/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/training/pretrained.ckpt', precision='32', num_ckpt=0, default_root_dir=None, save_last=True, monitor='val_loss', monitor_mode='min', early_stop_patience=0)
+DEBUG:piper_train:Using manual seed: 1234
+Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 278, in <module>
+    main()
+  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 136, in main
+    if supports_tensor_cores():
+  File "/home/runner/work/Zayra-ai-asistant/Zayra-ai-asistant/piper-src/src/python/piper_train/__main__.py", line 133, in supports_tensor_cores
+    return torch.cuda.get_device_capability(0)[0] >= 7
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 451, in get_device_capability
+    prop = get_device_properties(device)
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 465, in get_device_properties
+    _lazy_init()  # will define _get_device_properties
+  File "/opt/hostedtoolcache/Python/3.10.22/x64/lib/python3.10/site-packages/torch/cuda/__init__.py", line 305, in _lazy_init
+    raise AssertionError("Torch not compiled with CUDA enabled")
+AssertionError: Torch not compiled with CUDA enabled
