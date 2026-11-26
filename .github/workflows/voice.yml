@@ -88,8 +88,14 @@ jobs:
           )
           assert old2 in s, "nie znaleziono linii trainer.fit do patcha"
           s = s.replace(old2, new2)
+          # 3) Miękki limit czasu: trening zatrzyma się łagodnie przed limitem joba
+          #    i ZAWSZE wyeksportuje głos (save_last=True zapisuje last.ckpt).
+          old3 = "    trainer = Trainer(**filtered_args, callbacks=callbacks)"
+          new3 = "    trainer = Trainer(**filtered_args, callbacks=callbacks, max_time={'minutes': 300})"
+          assert old3 in s, "nie znaleziono linii Trainer do patcha"
+          s = s.replace(old3, new3)
           p.write_text(s)
-          print("Załatan: CPU guard + strict_loading=False")
+          print("Załatan: CPU guard + strict_loading=False + max_time=300min")
           PY
 
       - name: Install Python deps
