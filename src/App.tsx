@@ -3,10 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Captions, Moon, Square, Sun } from 'lucide-react';
 import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
-import { CONCEPTS, type ConceptId } from './visualizers';
 import { Stage } from './components/Stage';
 import { IconButton } from './components/IconButton';
-import { ConceptDock } from './components/ConceptDock';
 import { StatusPill } from './components/StatusPill';
 import { MicButton } from './components/MicButton';
 import { LabPanel } from './components/LabPanel';
@@ -24,14 +22,8 @@ const readTheme = (): Theme => {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 };
 
-const readConcept = (): ConceptId => {
-  const saved = localStorage.getItem('zayra-concept');
-  return CONCEPTS.some((c) => c.id === saved) ? (saved as ConceptId) : 'ribbon';
-};
-
 export default function App() {
   const [theme, setTheme] = useState<Theme>(readTheme);
-  const [concept, setConcept] = useState<ConceptId>(readConcept);
   const [state, setState] = useState<VoiceState>('idle');
   const [captions, setCaptions] = useState(() => localStorage.getItem('zayra-captions') !== 'off');
   const [revealed, setRevealed] = useState(0);
@@ -90,10 +82,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('zayra-concept', concept);
-  }, [concept]);
-
-  useEffect(() => {
     localStorage.setItem('zayra-captions', captions ? 'on' : 'off');
   }, [captions]);
 
@@ -123,8 +111,6 @@ export default function App() {
       if (e.code === 'Space') {
         e.preventDefault();
         micAction();
-      } else if (e.key >= '1' && e.key <= '4') {
-        setConcept(CONCEPTS[Number(e.key) - 1].id);
       } else if (e.key === 't' || e.key === 'T') {
         setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
       } else if (e.key === 'c' || e.key === 'C') {
@@ -183,7 +169,7 @@ export default function App() {
       {/* scena */}
       <main className="flex min-h-0 flex-1 items-center px-6">
         <div className="mx-auto h-[clamp(180px,36vh,320px)] w-full max-w-[860px]">
-          <Stage concept={concept} state={state} theme={theme} />
+          <Stage concept="bars" state={state} theme={theme} />
         </div>
       </main>
 
@@ -224,8 +210,6 @@ export default function App() {
             <Square size={15} />
           </IconButton>
         </div>
-
-        <ConceptDock value={concept} onChange={setConcept} />
 
         <div className="absolute bottom-7 left-6 hidden lg:block">
           <LabPanel state={state} onForce={force} onDemo={runDemo} />
