@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { VoiceSim, type VoiceState } from '../engine/sim';
+import type { VoiceState } from '../engine/sim';
+import type { VoiceEngine } from '../engine/audio';
 import { PALETTES, clonePalette, lerpPalette, type Theme } from '../engine/palette';
 import { conceptById, type ConceptId } from '../visualizers';
 
@@ -7,19 +8,20 @@ interface Props {
   concept: ConceptId;
   state: VoiceState;
   theme: Theme;
+  engine: VoiceEngine;
 }
 
-/** Scena: jeden canvas, pętla rAF, symulator głosu i płynna paleta. */
-export function Stage({ concept, state, theme }: Props) {
+/** Scena: jeden canvas, pętla rAF, silnik głosu i płynna paleta. */
+export function Stage({ concept, state, theme, engine }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const simRef = useRef<VoiceSim | null>(null);
-  if (!simRef.current) simRef.current = new VoiceSim();
 
   const stateRef = useRef(state);
   stateRef.current = state;
   const conceptRef = useRef(concept);
   conceptRef.current = concept;
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
   const targetPal = useRef(PALETTES[theme]);
   targetPal.current = PALETTES[theme];
   const curPal = useRef(clonePalette(PALETTES[theme]));
@@ -49,7 +51,7 @@ export function Stage({ concept, state, theme }: Props) {
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const frame = simRef.current!.update(dt, stateRef.current);
+      const frame = engineRef.current.update(dt, stateRef.current);
       lerpPalette(curPal.current, targetPal.current, 1 - Math.exp(-dt * 8));
       ctx.clearRect(0, 0, w, h);
       conceptById(conceptRef.current).draw(ctx, w, h, frame, curPal.current);

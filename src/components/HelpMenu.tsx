@@ -5,6 +5,7 @@ import { IconButton } from './IconButton';
 
 const SHORTCUTS: Array<[string, string]> = [
   ['Spacja', 'Rozmowa / przerwanie'],
+  ['M', 'Głos Zayry'],
   ['T', 'Motyw jasny / ciemny'],
   ['C', 'Napisy na żywo'],
   ['Esc', 'Zatrzymaj'],
