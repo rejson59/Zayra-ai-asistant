@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Captions, Info, Minimize2, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
+import { Captions, Info, Loader2, Minimize2, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
 import type { VoiceId } from '@diffusionstudio/vits-web';
 import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
@@ -18,6 +18,17 @@ import {
   tryLoadPublishedVoice,
   type VoiceProfile,
 } from './engine/piper';
+import {
+  DEFAULT_LLM,
+  LLM_MODELS,
+  hasWebGPU,
+  isModelLoaded,
+  loadModel,
+  streamChat,
+  type ChatMessage,
+  type LlmModel,
+} from './engine/llm';
+import { startStt, sttSupported, type SttHandle } from './engine/stt';
 import { Stage } from './components/Stage';
 import { IconButton } from './components/IconButton';
 import { StatusPill } from './components/StatusPill';
@@ -31,7 +42,6 @@ const SENTENCE =
   'Jasne. Masz dziś trzy spotkania: o dziesiątej przegląd projektu, w południe lunch z Anną, a po południu krótki sync z zespołem.';
 const WORDS = SENTENCE.split(' ');
 const WORD_MS = 165;
-const SPEAK_MS = WORDS.length * WORD_MS + 700;
 
 const readTheme = (): Theme => {
   const saved = localStorage.getItem('zayra-theme');
@@ -61,6 +71,13 @@ export default function App() {
   const [islandMode, setIslandMode] = useState(false);
   const [revealed, setRevealed] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [captionText, setCaptionText] = useState(SENTENCE);
+  const [heardText, setHeardText] = useState('');
+  const [llmModel, setLlmModel] = useState<LlmModel>(() => {
+    const saved = localStorage.getItem('zayra-llm');
+    return LLM_MODELS.find((m) => m.id === saved) ?? DEFAULT_LLM;
+  });
+  const [llmProgress, setLlmProgress] = useState<string | null>(null);
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -71,6 +88,13 @@ export default function App() {
   const voiceIdRef = useRef(voiceId);
   voiceIdRef.current = voiceId;
   const genRef = useRef(0);
+  const captionTextRef = useRef(captionText);
+  captionTextRef.current = captionText;
+  const llmModelRef = useRef(llmModel);
+  llmModelRef.current = llmModel;
+  const transcriptRef = useRef('');
+  const sttRef = useRef<SttHandle | null>(null);
+  const historyRef = useRef<ChatMessage[]>([]);
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const captionTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -101,8 +125,9 @@ export default function App() {
   const startCaptionTimer = (interval = WORD_MS) => {
     if (captionTimer.current) clearInterval(captionTimer.current);
     captionTimer.current = setInterval(() => {
+      const total = captionTextRef.current.split(/\s+/).filter(Boolean).length;
       setRevealed((r) => {
-        if (r >= WORDS.length) {
+        if (r >= total) {
           if (captionTimer.current) {
             clearInterval(captionTimer.current);
             captionTimer.current = null;
@@ -123,16 +148,17 @@ export default function App() {
     setState('idle');
   };
 
-  const startSpeaking = async () => {
+  /** Czyta dowolny tekst głosem Zayry (Piper streaming zdaniowy + fallback). */
+  const speakText = async (text: string, gen: number) => {
+    setCaptionText(text);
+    captionTextRef.current = text;
     setRevealed(0);
-    const gen = ++genRef.current;
+    const speakMs = text.split(/\s+/).filter(Boolean).length * WORD_MS + 700;
 
-    // Piper: prawdziwy głos + analiza audio + streaming zdaniowy (szybszy start)
     if (voiceOnRef.current) {
-      setState('thinking');
       let started = false;
       try {
-        const sentences = splitSentences(SENTENCE);
+        const sentences = splitSentences(text);
         for (let i = 0; i < sentences.length; i++) {
           const blob = await synthesize(sentences[i], voiceIdRef.current);
           if (gen !== genRef.current) return;
@@ -167,7 +193,7 @@ export default function App() {
     if (voiceOnRef.current && ttsSupported()) {
       engine.startTts();
       let gotBoundary = false;
-      speakRef.current = speak(SENTENCE, {
+      speakRef.current = speak(text, {
         onWord: (i) => {
           gotBoundary = true;
           if (captionTimer.current) {
@@ -182,7 +208,7 @@ export default function App() {
           engine.stopTts();
           clearTimers();
           startCaptionTimer();
-          later(() => finishSpeaking(), SPEAK_MS);
+          later(() => finishSpeaking(), speakMs);
         },
       });
       later(() => {
@@ -191,16 +217,47 @@ export default function App() {
       later(() => finishSpeaking(), 30000);
     } else {
       startCaptionTimer();
-      later(() => finishSpeaking(), SPEAK_MS);
+      later(() => finishSpeaking(), speakMs);
+    }
+  };
+
+  /** Prawdziwa odpowiedź: transkrypt → lokalny LLM → głos Zayry. */
+  const respond = async (userText: string) => {
+    const gen = ++genRef.current;
+    setState('thinking');
+    setRevealed(0);
+    const prompt = userText.trim();
+    if (!prompt || !hasWebGPU()) {
+      if (prompt && !hasWebGPU()) showToast('AI wymaga WebGPU (Chrome/Edge) — odpowiadam demo.');
+      await speakText(SENTENCE, gen);
+      return;
+    }
+    historyRef.current.push({ role: 'user', content: prompt });
+    try {
+      if (!isModelLoaded(llmModelRef.current.id)) setLlmProgress('Przygotowuję mózg…');
+      const answer = await streamChat(llmModelRef.current.id, historyRef.current, () => {});
+      setLlmProgress(null);
+      if (gen !== genRef.current) return;
+      const finalText = answer || 'Przepraszam, nie mam teraz odpowiedzi. Spróbuj jeszcze raz.';
+      historyRef.current.push({ role: 'assistant', content: finalText });
+      await speakText(finalText, gen);
+    } catch {
+      setLlmProgress(null);
+      if (gen !== genRef.current) return;
+      showToast('Mózg nie jest gotowy — odpowiadam demo.');
+      await speakText(SENTENCE, gen);
     }
   };
 
   const finishListening = () => {
     clearTimers();
+    sttRef.current?.stop();
+    sttRef.current = null;
     engine.disableMic();
     setMicLive(false);
     setState('thinking');
-    later(() => void startSpeaking(), 600);
+    const transcript = transcriptRef.current.trim();
+    later(() => void respond(transcript), 350);
   };
 
   const beginListening = () => {
@@ -212,6 +269,21 @@ export default function App() {
     setState('listening');
     engine.resetVad();
     setRevealed(0);
+    transcriptRef.current = '';
+    setHeardText('');
+    sttRef.current?.abort();
+    sttRef.current = sttSupported()
+      ? startStt({
+          onInterim: (t) => {
+            transcriptRef.current = t;
+            setHeardText(t);
+          },
+          onFinal: (t) => {
+            if (t) transcriptRef.current = t;
+          },
+          onError: () => {},
+        })
+      : null;
     void engine.enableMic().then((ok) => {
       setMicLive(ok);
       if (!ok) showToast('Mikrofon niedostępny — tryb demo');
@@ -228,6 +300,8 @@ export default function App() {
     genRef.current++;
     clearTimers();
     cancelSpeech();
+    sttRef.current?.abort();
+    sttRef.current = null;
     engine.stopTts();
     engine.stopPlayback();
     engine.disableMic();
@@ -247,7 +321,10 @@ export default function App() {
     setState('listening');
     setRevealed(0);
     later(() => setState('thinking'), 2300);
-    later(() => void startSpeaking(), 3500);
+    later(() => {
+      const gen = ++genRef.current;
+      void speakText(SENTENCE, gen);
+    }, 3500);
   };
 
   const force = (s: VoiceState) => {
@@ -319,6 +396,16 @@ export default function App() {
     void applyVoiceProfile(profile);
   }, [profile]);
 
+  // preload lokalnego mózgu w tle (gotowy, zanim zaczniesz mówić); offline z cache
+  useEffect(() => {
+    localStorage.setItem('zayra-llm', llmModel.id);
+    if (hasWebGPU()) {
+      void loadModel(llmModel.id, (p) => {
+        setLlmProgress(p < 1 ? `Pobieram mózg… ${Math.round(p * 100)}%` : null);
+      }).catch(() => setLlmProgress(null));
+    }
+  }, [llmModel]);
+
   useEffect(() => {
     engine.onListeningEnd = () => actionsRef.current.finishListening();
     window.speechSynthesis?.getVoices();
@@ -346,6 +433,7 @@ export default function App() {
     () => () => {
       clearTimers();
       cancelSpeech();
+      sttRef.current?.abort();
       engine.dispose();
       window.speechSynthesis?.cancel();
     },
@@ -412,6 +500,8 @@ export default function App() {
             onVoiceChange={setVoiceId}
             profile={profile}
             onProfileChange={setProfile}
+            llmModel={llmModel}
+            onLlmChange={setLlmModel}
           />
           <IconButton label="Zminimalizuj do wyspy" onClick={() => setIslandMode(true)}>
             <Minimize2 size={18} />
@@ -452,20 +542,32 @@ export default function App() {
 
         <div
           aria-live="polite"
-          className="flex h-6 max-w-xl items-center justify-center text-center text-[13.5px] leading-snug font-medium text-dim"
+          className="flex min-h-6 max-w-xl items-center justify-center text-center text-[13.5px] leading-snug font-medium text-dim"
         >
+          {captions && state === 'listening' && (
+            <p className="text-ink/80">{heardText || 'Słucham…'}</p>
+          )}
+          {captions && state === 'thinking' && (
+            <p className="flex items-center gap-2">
+              <Loader2 size={13} className="animate-spin text-accent" />
+              {llmProgress ?? 'Myślę…'}
+            </p>
+          )}
           {captions && state === 'speaking' && (
             <p>
-              {WORDS.map((word, i) => (
-                <span
-                  key={i}
-                  className={`mr-[0.32em] inline-block transition-all duration-300 ${
-                    i < revealed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
-                  }`}
-                >
-                  {word}
-                </span>
-              ))}
+              {captionText
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((word, i) => (
+                  <span
+                    key={i}
+                    className={`mr-[0.32em] inline-block transition-all duration-300 ${
+                      i < revealed ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
+                    }`}
+                  >
+                    {word}
+                  </span>
+                ))}
             </p>
           )}
         </div>
