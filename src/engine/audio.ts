@@ -107,6 +107,13 @@ export class PiperPlayback {
   active = false;
   onEnded: (() => void) | null = null;
 
+  // streaming zdaniowy
+  private queue: AudioBuffer[] = [];
+  private streamDone = false;
+  private streamCb: (() => void) | null = null;
+  private streamTotal = 0;
+  private streamStarted = 0;
+
   private ensureCtx(): AudioContext {
     if (!this.ctx) {
       const Ctor =
@@ -148,12 +155,70 @@ export class PiperPlayback {
     this.active = true;
   }
 
+  /** Rozpoczyna streaming zdaniowy: pierwsze zdanie gra od razu. */
+  beginStream(onAllEnded: () => void) {
+    this.stop();
+    this.queue = [];
+    this.streamDone = false;
+    this.streamCb = onAllEnded;
+    this.streamTotal = 0;
+    this.streamStarted = 0;
+    this.active = true;
+  }
+
+  /** Dokłada zsyntezowane zdanie do kolejki; startuje odtwarzanie jeśli idle. */
+  enqueue(buffer: AudioBuffer) {
+    this.queue.push(buffer);
+    this.streamTotal += buffer.duration;
+    if (!this.source) this.playNext();
+  }
+
+  /** Sygnalizuje, że nie będzie więcej zdań. */
+  endStream() {
+    this.streamDone = true;
+    if (!this.source && this.queue.length === 0) this.finishStream();
+  }
+
+  private playNext() {
+    const buf = this.queue.shift();
+    if (!buf) {
+      if (this.streamDone) this.finishStream();
+      return;
+    }
+    const ctx = this.ensureCtx();
+    void ctx.resume();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.analyser!);
+    src.onended = () => {
+      if (this.source === src) {
+        this.source = null;
+        this.playNext();
+      }
+    };
+    src.start();
+    this.source = src;
+    if (!this.streamStarted) this.streamStarted = ctx.currentTime;
+    this.active = true;
+  }
+
+  private finishStream() {
+    this.active = false;
+    this.source = null;
+    const cb = this.streamCb;
+    this.streamCb = null;
+    cb?.();
+  }
+
   read(dt: number, state: VoiceState): VoiceFrame {
     return this.reader.read(this.analyser!, this.ctx!.sampleRate, dt, state);
   }
 
   get progress(): number {
-    if (!this.ctx || !this.duration) return 0;
+    if (!this.ctx) return 0;
+    if (this.streamTotal)
+      return Math.min(1, (this.ctx.currentTime - this.streamStarted) / this.streamTotal);
+    if (!this.duration) return 0;
     return Math.min(1, (this.ctx.currentTime - this.startedAt) / this.duration);
   }
 
@@ -171,6 +236,10 @@ export class PiperPlayback {
 
   stop() {
     this.stopSource();
+    this.queue = [];
+    this.streamDone = true;
+    this.streamCb = null;
+    this.streamTotal = 0;
     this.active = false;
     this.reader.reset();
   }
@@ -246,6 +315,24 @@ export class VoiceEngine {
     };
     await this.playback.play(buffer);
     this.piperActive = true;
+  }
+
+  /** Streaming zdaniowy: Zayra zaczyna mówić po pierwszym zdaniu. */
+  beginStream(onAllEnded: () => void) {
+    this.playback.onEnded = null;
+    this.playback.beginStream(() => {
+      this.piperActive = false;
+      onAllEnded();
+    });
+    this.piperActive = true;
+  }
+
+  enqueue(buffer: AudioBuffer) {
+    this.playback.enqueue(buffer);
+  }
+
+  endStream() {
+    this.playback.endStream();
   }
 
   stopPlayback() {

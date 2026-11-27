@@ -5,21 +5,25 @@ import type { VoiceId } from '@diffusionstudio/vits-web';
 import {
   CUSTOM_SLOT,
   PL_VOICES,
+  VOICE_PROFILES,
   ensureBuiltin,
   hasCustomVoice,
   installCustomVoice,
   isCustom,
   removeCustomVoice,
   synthesize,
+  type VoiceProfile,
 } from '../engine/piper';
 import { IconButton } from './IconButton';
 
 interface Props {
   voiceId: VoiceId;
   onVoiceChange: (id: VoiceId) => void;
+  profile: VoiceProfile;
+  onProfileChange: (p: VoiceProfile) => void;
 }
 
-export function VoiceSettings({ voiceId, onVoiceChange }: Props) {
+export function VoiceSettings({ voiceId, onVoiceChange, profile, onProfileChange }: Props) {
   const [open, setOpen] = useState(false);
   const [customInstalled, setCustomInstalled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -157,6 +161,36 @@ export function VoiceSettings({ voiceId, onVoiceChange }: Props) {
                   {isCustom(voiceId) && <Check size={15} className="text-accent" />}
                 </button>
               </div>
+
+              {/* profile brzmienia i tempa własnego głosu */}
+              {isCustom(voiceId) && (
+                <div className="mt-3">
+                  <p className="mb-2 text-[11px] font-bold tracking-wide text-dim uppercase">
+                    Brzmienie i tempo
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {VOICE_PROFILES.map((p) => {
+                      const active = profile.id === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => onProfileChange(p)}
+                          className={`flex cursor-pointer flex-col items-start rounded-2xl border px-3 py-2 text-left transition-colors ${
+                            active
+                              ? 'border-accent/40 bg-accent-soft'
+                              : 'border-line hover:border-accent/30'
+                          }`}
+                        >
+                          <span className={`text-[12px] font-bold ${active ? 'text-ink' : 'text-dim'}`}>
+                            {p.name}
+                          </span>
+                          <span className="text-[10.5px] text-dim">{p.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* wgrywanie własnego modelu */}
               <div className="mt-3 rounded-2xl border border-dashed border-line p-3">

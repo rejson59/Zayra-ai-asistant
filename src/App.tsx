@@ -6,7 +6,18 @@ import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
 import { VoiceEngine } from './engine/audio';
 import { speak, ttsSupported } from './engine/tts';
-import { CUSTOM_SLOT, synthesize, tryLoadPublishedVoice } from './engine/piper';
+import {
+  CUSTOM_SLOT,
+  DEFAULT_PROFILE,
+  VOICE_PROFILES,
+  applyVoiceProfile,
+  clearSessionCache,
+  enableSessionCache,
+  splitSentences,
+  synthesize,
+  tryLoadPublishedVoice,
+  type VoiceProfile,
+} from './engine/piper';
 import { Stage } from './components/Stage';
 import { IconButton } from './components/IconButton';
 import { StatusPill } from './components/StatusPill';
@@ -39,6 +50,12 @@ export default function App() {
   const [voiceId, setVoiceId] = useState<VoiceId>(
     () => (localStorage.getItem('zayra-voice-id') as VoiceId) || 'pl_PL-gosia-medium',
   );
+  const [profile, setProfile] = useState<VoiceProfile>(() => {
+    const saved = localStorage.getItem('zayra-profile');
+    return VOICE_PROFILES.find((p) => p.id === saved) ?? DEFAULT_PROFILE;
+  });
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
   const [micLive, setMicLive] = useState(false);
   const [revealed, setRevealed] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -108,26 +125,38 @@ export default function App() {
     setRevealed(0);
     const gen = ++genRef.current;
 
-    // Piper: prawdziwy głos + analiza prawdziwego audio
+    // Piper: prawdziwy głos + analiza audio + streaming zdaniowy (szybszy start)
     if (voiceOnRef.current) {
       setState('thinking');
+      let started = false;
       try {
-        const blob = await synthesize(SENTENCE, voiceIdRef.current);
-        if (gen !== genRef.current) return;
-        const buffer = await engine.decodeAudio(blob);
-        if (gen !== genRef.current) return;
-        const durMs = buffer.duration * 1000;
-        await engine.startPlayback(buffer, () => finishSpeaking());
+        const sentences = splitSentences(SENTENCE);
+        for (let i = 0; i < sentences.length; i++) {
+          const blob = await synthesize(sentences[i], voiceIdRef.current);
+          if (gen !== genRef.current) return;
+          const buffer = await engine.decodeAudio(blob);
+          if (gen !== genRef.current) return;
+          if (!started) {
+            started = true;
+            engine.beginStream(() => finishSpeaking());
+            setState('speaking');
+            startCaptionTimer(Math.max(70, WORD_MS));
+          }
+          engine.enqueue(buffer);
+        }
         if (gen !== genRef.current) {
           engine.stopPlayback();
           return;
         }
-        setState('speaking');
-        startCaptionTimer(Math.max(60, durMs / WORDS.length));
-        later(() => finishSpeaking(), durMs + 2500);
+        engine.endStream();
+        later(() => finishSpeaking(), 60000);
         return;
       } catch {
         if (gen !== genRef.current) return;
+        if (started) {
+          engine.endStream();
+          return;
+        }
       }
     }
 
@@ -269,14 +298,24 @@ export default function App() {
   }, [voiceOn]);
   useEffect(() => {
     localStorage.setItem('zayra-voice-id', voiceId);
+    clearSessionCache();
   }, [voiceId]);
 
-  // auto-wczytaj głos opublikowany przez GitHub Actions (jeśli istnieje)
+  // cache sesji ONNX (przyspieszenie) + auto-wczytanie głosu + profil głosu
   useEffect(() => {
-    void tryLoadPublishedVoice().then((ok) => {
+    void (async () => {
+      await enableSessionCache();
+      const ok = await tryLoadPublishedVoice();
       if (ok && !localStorage.getItem('zayra-voice-id')) setVoiceId(CUSTOM_SLOT);
-    });
+      await applyVoiceProfile(profileRef.current);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('zayra-profile', profile.id);
+    void applyVoiceProfile(profile);
+  }, [profile]);
 
   useEffect(() => {
     engine.onListeningEnd = () => actionsRef.current.finishListening();
@@ -343,7 +382,12 @@ export default function App() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <VoiceSettings voiceId={voiceId} onVoiceChange={setVoiceId} />
+          <VoiceSettings
+            voiceId={voiceId}
+            onVoiceChange={setVoiceId}
+            profile={profile}
+            onProfileChange={setProfile}
+          />
           <IconButton
             label={voiceOn ? 'Wycisz głos Zayry' : 'Włącz głos Zayry'}
             active={voiceOn}

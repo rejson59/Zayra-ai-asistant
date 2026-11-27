@@ -80,6 +80,87 @@ export async function removeCustomVoice(): Promise<void> {
 
 export const isCustom = (id: VoiceId) => id === CUSTOM_SLOT;
 
+/* ------------------------------------------------------------------ */
+/* Przyspieszenie: cache sesji ONNX.                                   */
+/* vits-web tworzy nową sesję (63 MB) przy KAŻDYM predict() — to       */
+/* sekundy na słabym CPU. Podmieniamy InferenceSession.create tak, by  */
+/* sesja była tworzona raz i reuse'owana. Config jest czytany z OPFS   */
+/* na żywo, więc strojenie głosu/tempa działa bez przeładowania.       */
+/* ------------------------------------------------------------------ */
+let cachePatched = false;
+const sessionCache = new Map<number, Promise<unknown>>();
+
+export async function enableSessionCache(): Promise<void> {
+  if (cachePatched) return;
+  const ort = await import('onnxruntime-web');
+  const IS = ort.InferenceSession as unknown as {
+    create: (model: ArrayBuffer | Uint8Array | string, opts?: unknown) => Promise<unknown>;
+  };
+  const orig = IS.create;
+  IS.create = (model, opts) => {
+    if (typeof model === 'string') return orig(model, opts);
+    const buf = model instanceof Uint8Array ? (model.buffer as ArrayBuffer) : model;
+    const key = buf.byteLength;
+    let p = sessionCache.get(key);
+    if (!p) {
+      p = orig(buf, opts);
+      sessionCache.set(key, p);
+      p.catch(() => sessionCache.delete(key));
+    }
+    return p;
+  };
+  cachePatched = true;
+}
+
+export function clearSessionCache(): void {
+  sessionCache.clear();
+}
+
+/* ------------------------------------------------------------------ */
+/* Profile głosu — strojenie barwy i tempa przez config w OPFS.        */
+/* ------------------------------------------------------------------ */
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  hint: string;
+  noise_scale: number;
+  noise_w: number;
+  length_scale: number;
+}
+
+export const VOICE_PROFILES: VoiceProfile[] = [
+  { id: 'natural', name: 'Naturalny', hint: 'zbalansowany', noise_scale: 0.62, noise_w: 0.75, length_scale: 0.96 },
+  { id: 'clean', name: 'Czysty', hint: 'mniej szumu', noise_scale: 0.48, noise_w: 0.58, length_scale: 0.96 },
+  { id: 'warm', name: 'Ciepły', hint: 'więcej ekspresji', noise_scale: 0.72, noise_w: 0.9, length_scale: 1.0 },
+  { id: 'fast', name: 'Szybki', hint: 'żwawsza mowa', noise_scale: 0.55, noise_w: 0.68, length_scale: 0.86 },
+];
+
+export const DEFAULT_PROFILE = VOICE_PROFILES[0];
+
+/** Zapisuje parametry profilu do configu własnego głosu w OPFS (działa od razu). */
+export async function applyVoiceProfile(p: VoiceProfile): Promise<void> {
+  try {
+    const dir = await piperDir(false);
+    const fh = await dir.getFileHandle(CUSTOM_CFG);
+    const cfg = JSON.parse(await (await fh.getFile()).text());
+    cfg.inference = {
+      ...(cfg.inference ?? {}),
+      noise_scale: p.noise_scale,
+      noise_w: p.noise_w,
+      length_scale: p.length_scale,
+    };
+    await writeFile(dir, CUSTOM_CFG, new Blob([JSON.stringify(cfg)], { type: 'application/json' }));
+  } catch {
+    /* brak własnego głosu — profile dotyczą tylko klonu */
+  }
+}
+
+/** Dzieli tekst na zdania (do streamingu — pierwsze zdanie gra od razu). */
+export function splitSentences(text: string): string[] {
+  const parts = text.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) ?? [text];
+  return parts.map((s) => s.trim()).filter(Boolean);
+}
+
 /**
  * Wczytuje głos opublikowany przez GitHub Actions (/voice/zayra.onnx).
  * Jeśli własny głos jest już zainstalowany, nie nadpisuje go.
