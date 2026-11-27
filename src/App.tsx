@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Captions, Info, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
+import { Captions, Info, Minimize2, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
 import type { VoiceId } from '@diffusionstudio/vits-web';
 import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
@@ -25,6 +25,7 @@ import { MicButton } from './components/MicButton';
 import { LabPanel } from './components/LabPanel';
 import { HelpMenu } from './components/HelpMenu';
 import { VoiceSettings } from './components/VoiceSettings';
+import { FloatingIsland } from './components/FloatingIsland';
 
 const SENTENCE =
   'Jasne. Masz dziś trzy spotkania: o dziesiątej przegląd projektu, w południe lunch z Anną, a po południu krótki sync z zespołem.';
@@ -57,6 +58,7 @@ export default function App() {
   const profileRef = useRef(profile);
   profileRef.current = profile;
   const [micLive, setMicLive] = useState(false);
+  const [islandMode, setIslandMode] = useState(false);
   const [revealed, setRevealed] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -329,6 +331,7 @@ export default function App() {
       } else if (e.key === 't' || e.key === 'T') a.toggleTheme();
       else if (e.key === 'c' || e.key === 'C') a.toggleCaptions();
       else if (e.key === 'm' || e.key === 'M') a.toggleVoice();
+      else if (e.key === 'i' || e.key === 'I') setIslandMode((v) => !v);
       else if (e.key === 'Escape') a.stop();
     };
     window.addEventListener('keydown', onKey);
@@ -354,6 +357,28 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
+      {islandMode ? (
+        <div className="relative h-full w-full">
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: 'radial-gradient(120% 80% at 50% -10%, var(--accent-soft), transparent 60%)' }}
+          />
+          <FloatingIsland
+            state={state}
+            theme={theme}
+            engine={engine}
+            onExpand={() => setIslandMode(false)}
+            onTalk={micAction}
+          />
+          <div className="absolute inset-x-0 bottom-10 flex flex-col items-center gap-1.5 px-6 text-center">
+            <p className="font-display text-[22px] italic text-ink">Zayra działa w tle</p>
+            <p className="max-w-xs text-[12.5px] leading-snug text-dim">
+              Kliknij wyspę, aby otworzyć · przytrzymaj, żeby mówić · przeciągnij, by przesunąć
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -388,6 +413,9 @@ export default function App() {
             profile={profile}
             onProfileChange={setProfile}
           />
+          <IconButton label="Zminimalizuj do wyspy" onClick={() => setIslandMode(true)}>
+            <Minimize2 size={18} />
+          </IconButton>
           <IconButton
             label={voiceOn ? 'Wycisz głos Zayry' : 'Włącz głos Zayry'}
             active={voiceOn}
@@ -456,6 +484,8 @@ export default function App() {
           <LabPanel state={state} onForce={force} onDemo={runDemo} />
         </div>
       </footer>
+        </>
+      )}
     </div>
   );
 }
