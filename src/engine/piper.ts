@@ -135,7 +135,7 @@ export const VOICE_PROFILES: VoiceProfile[] = [
   { id: 'fast', name: 'Szybki', hint: 'żwawsza mowa', noise_scale: 0.55, noise_w: 0.68, length_scale: 0.86 },
 ];
 
-export const DEFAULT_PROFILE = VOICE_PROFILES[0];
+export const DEFAULT_PROFILE = VOICE_PROFILES.find((p) => p.id === 'warm') ?? VOICE_PROFILES[0];
 
 /** Zapisuje parametry profilu do configu własnego głosu w OPFS (działa od razu). */
 export async function applyVoiceProfile(p: VoiceProfile): Promise<void> {
