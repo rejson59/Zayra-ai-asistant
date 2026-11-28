@@ -14,7 +14,7 @@ import {
   synthesize,
   type VoiceProfile,
 } from '../engine/piper';
-import { BRAINS, hasWebGPU, type Brain } from '../engine/llm';
+import { BRAINS, hasWebGPU, isPatient, setPatient, type Brain } from '../engine/llm';
 import { IconButton } from './IconButton';
 
 interface Props {
@@ -43,6 +43,7 @@ export function VoiceSettings({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('voice');
+  const [patient, setPatientState] = useState(isPatient());
   const [customInstalled, setCustomInstalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
@@ -321,6 +322,32 @@ export function VoiceSettings({
                         );
                       })}
                     </div>
+                    <button
+                      onClick={() => {
+                        const v = !patient;
+                        setPatientState(v);
+                        setPatient(v);
+                      }}
+                      className="mt-2 flex w-full cursor-pointer items-center justify-between gap-2 rounded-2xl border border-line px-3 py-2 text-left transition-colors hover:border-accent/30"
+                    >
+                      <span className="flex flex-col">
+                        <span className="text-[12px] font-bold text-ink">Cierpliwa chmura</span>
+                        <span className="text-[10.5px] text-dim">
+                          zawsze mądra odpowiedź, nawet gdy trzeba chwilę poczekać
+                        </span>
+                      </span>
+                      <span
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                          patient ? 'bg-accent' : 'bg-surface2'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-all ${
+                            patient ? 'left-4.5' : 'left-0.5'
+                          }`}
+                        />
+                      </span>
+                    </button>
                     <p className="mt-2 text-[10px] leading-snug text-dim">
                       Chmura jest darmowa i bez klucza (pytania wychodzą online). Lokalny mózg pobiera
                       się raz i działa offline na Twoim urządzeniu.

@@ -149,8 +149,83 @@ async function localAnswer(
 }
 
 // ---------- darmowa chmura (Pollinations, bez klucza) ----------
+// Limit anonimowy ~1 odpowiedź / 45 s na IP. Ukrywamy go przez:
+//  1) cache odpowiedzi (powtórki natychmiast, bez zapytania),
+//  2) śledzenie cooldownu i odliczanie w napisach,
+//  3) krótkie oczekiwanie zamiast głupiego fallbacku (gdy limit blisko),
+//  4) tryb „cierpliwy" — zawsze czeka na mądrą odpowiedź.
 
-async function cloudAnswer(history: ChatMessage[]): Promise<string> {
+const CLOUD_COOLDOWN_MS = 45_000;
+const WAIT_THRESHOLD_MS = 20_000;
+const CACHE_STORAGE = 'zayra-ans-cache';
+const CACHE_MAX = 120;
+
+let lastCloudAt = Number(localStorage.getItem('zayra-cloud-at') ?? 0) || 0;
+let patient = localStorage.getItem('zayra-patient') === '1';
+
+export const setPatient = (v: boolean) => {
+  patient = v;
+  localStorage.setItem('zayra-patient', v ? '1' : '0');
+};
+export const isPatient = () => patient;
+
+export const cloudCooldownRemaining = () =>
+  Math.max(0, CLOUD_COOLDOWN_MS - (Date.now() - lastCloudAt));
+
+const markCloudCall = () => {
+  lastCloudAt = Date.now();
+  localStorage.setItem('zayra-cloud-at', String(lastCloudAt));
+};
+
+type CacheMap = Record<string, { t: string; at: number }>;
+const readCache = (): CacheMap => {
+  try {
+    return JSON.parse(localStorage.getItem(CACHE_STORAGE) ?? '{}') as CacheMap;
+  } catch {
+    return {};
+  }
+};
+const cacheKey = (history: ChatMessage[]) => {
+  const last = history[history.length - 1]?.content ?? '';
+  const ctx = history
+    .slice(-3, -1)
+    .map((m) => m.content)
+    .join('|');
+  return (ctx + '>>' + last).toLowerCase().replace(/\s+/g, ' ').trim();
+};
+const cacheGet = (k: string): string | null => readCache()[k]?.t ?? null;
+const cacheSet = (k: string, t: string) => {
+  const c = readCache();
+  c[k] = { t, at: Date.now() };
+  const top = Object.entries(c)
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, CACHE_MAX);
+  try {
+    localStorage.setItem(CACHE_STORAGE, JSON.stringify(Object.fromEntries(top)));
+  } catch {
+    /* pełny storage — trudno */
+  }
+};
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function cloudAnswer(
+  history: ChatMessage[],
+  onStatus?: (s: string | null) => void,
+  cancelled?: () => boolean,
+  forceWait = false,
+): Promise<string> {
+  let wait = cloudCooldownRemaining();
+  const willWait = forceWait || patient || wait <= WAIT_THRESHOLD_MS;
+  if (wait > 0 && !willWait) throw new Error('cooldown');
+  while (wait > 0) {
+    if (cancelled?.()) throw new Error('cancelled');
+    onStatus?.(`Chmura odpowie za ${Math.ceil(wait / 1000)} s…`);
+    await sleep(Math.min(1000, wait));
+    wait = cloudCooldownRemaining();
+  }
+  if (cancelled?.()) throw new Error('cancelled');
+  onStatus?.('Pytam chmurę…');
   const res = await fetch('https://text.pollinations.ai/openai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -163,10 +238,12 @@ async function cloudAnswer(history: ChatMessage[]): Promise<string> {
     signal: AbortSignal.timeout(25000),
   });
   if (res.status === 402 || res.status === 429) {
-    throw new Error('Darmowa chmura ma limit ok. 1 pytania na 45 s — odczekaj chwilę.');
+    markCloudCall();
+    throw new Error('Darmowa chmura ma limit — spróbuj za chwilę.');
   }
   if (!res.ok) throw new Error(`Chmura nie odpowiada (${res.status}).`);
   const raw = await res.text();
+  markCloudCall();
   try {
     const data = JSON.parse(raw);
     const text = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text;
@@ -189,6 +266,7 @@ export async function answer(
   brain: Brain,
   history: ChatMessage[],
   onStatus?: (s: string | null) => void,
+  cancelled?: () => boolean,
 ): Promise<AnswerResult> {
   const useLocal = () =>
     localAnswer(brain.modelId ?? AUTO_LOCAL_MODEL, history, onStatus).then((text) => ({
@@ -197,20 +275,30 @@ export async function answer(
     }));
 
   if (brain.kind === 'local') return useLocal();
-  if (brain.kind === 'cloud') {
-    onStatus?.('Pytam chmurę…');
-    const text = await cloudAnswer(history);
+
+  // cache: powtórzone pytanie -> natychmiastowa mądra odpowiedź, bez limitu
+  const k = cacheKey(history);
+  const hit = cacheGet(k);
+  if (hit) {
     onStatus?.(null);
-    return { text, source: 'cloud' };
+    return { text: hit, source: 'cloud' };
   }
-  // auto: chmura gdy online, lokalny fallback
+
+  const tryCloud = async (forceWait: boolean) => {
+    const text = await cloudAnswer(history, onStatus, cancelled, forceWait);
+    cacheSet(k, text);
+    onStatus?.(null);
+    return { text, source: 'cloud' as const };
+  };
+
+  if (brain.kind === 'cloud') return tryCloud(true);
+
+  // auto: chmura gdy online; krótki limit przeczekaj, długi/offline -> lokalny
   if (navigator.onLine) {
     try {
-      onStatus?.('Pytam chmurę…');
-      const text = await cloudAnswer(history);
-      onStatus?.(null);
-      return { text, source: 'cloud' };
-    } catch {
+      return await tryCloud(false);
+    } catch (e) {
+      if (cancelled?.() || (e instanceof Error && e.message === 'cancelled')) throw e;
       onStatus?.(null);
     }
   }

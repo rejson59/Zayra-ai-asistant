@@ -252,13 +252,16 @@ export default function App() {
     }
     historyRef.current.push({ role: 'user', content: prompt });
     try {
-      const { text, source } = await answer(brainRef.current, historyRef.current, (s) =>
-        setLlmProgress(s),
+      const { text, source } = await answer(
+        brainRef.current,
+        historyRef.current,
+        (s) => setLlmProgress(s),
+        () => gen !== genRef.current,
       );
       setLlmProgress(null);
       if (gen !== genRef.current) return;
       if (source === 'local' && brainRef.current.kind === 'auto') {
-        showToast('Chmura niedostępna — odpowiadam lokalnie.', 3200);
+        showToast('Chmura zajęta — odpowiadam lokalnie. Za chwilę znów mądrzej.', 3200);
       }
       const finalText =
         cleanAnswer(text) || 'Przepraszam, nie mam teraz odpowiedzi. Spróbuj jeszcze raz.';
