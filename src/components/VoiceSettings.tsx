@@ -14,7 +14,7 @@ import {
   synthesize,
   type VoiceProfile,
 } from '../engine/piper';
-import { LLM_MODELS, hasWebGPU, type LlmModel } from '../engine/llm';
+import { BRAINS, hasWebGPU, type Brain } from '../engine/llm';
 import { IconButton } from './IconButton';
 
 interface Props {
@@ -22,8 +22,8 @@ interface Props {
   onVoiceChange: (id: VoiceId) => void;
   profile: VoiceProfile;
   onProfileChange: (p: VoiceProfile) => void;
-  llmModel: LlmModel;
-  onLlmChange: (m: LlmModel) => void;
+  brain: Brain;
+  onBrainChange: (b: Brain) => void;
 }
 
 export function VoiceSettings({
@@ -31,8 +31,8 @@ export function VoiceSettings({
   onVoiceChange,
   profile,
   onProfileChange,
-  llmModel,
-  onLlmChange,
+  brain,
+  onBrainChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [customInstalled, setCustomInstalled] = useState(false);
@@ -202,23 +202,23 @@ export function VoiceSettings({
                 </div>
               )}
 
-              {/* mózg AI — lokalny model */}
+              {/* mózg AI — chmura i/lub lokalny model */}
               <div className="mt-3">
                 <p className="mb-2 text-[11px] font-bold tracking-wide text-dim uppercase">
-                  Mózg Zayry · AI (offline)
+                  Mózg Zayry · AI
                 </p>
                 {!hasWebGPU() && (
                   <p className="mb-2 rounded-xl border border-line px-2.5 py-1.5 text-[10.5px] leading-snug text-dim">
-                    Ta przeglądarka nie ma WebGPU — użyj Chrome/Edge, by Zayra myślała lokalnie.
+                    Ta przeglądarka nie ma WebGPU — lokalny mózg nie zadziała, ale chmura tak.
                   </p>
                 )}
                 <div className="flex flex-col gap-1.5">
-                  {LLM_MODELS.map((m) => {
-                    const active = llmModel.id === m.id;
+                  {BRAINS.map((m) => {
+                    const active = brain.id === m.id;
                     return (
                       <button
                         key={m.id}
-                        onClick={() => onLlmChange(m)}
+                        onClick={() => onBrainChange(m)}
                         className={`flex w-full cursor-pointer items-center justify-between rounded-2xl border px-3 py-2 text-left transition-colors ${
                           active ? 'border-accent/40 bg-accent-soft' : 'border-line hover:border-accent/30'
                         }`}
@@ -235,7 +235,8 @@ export function VoiceSettings({
                   })}
                 </div>
                 <p className="mt-1.5 text-[10px] leading-snug text-dim">
-                  Pierwsze użycie pobiera model (potem offline). Wszystko liczy się na Twoim urządzeniu.
+                  Chmura jest darmowa i bez klucza (pytania wychodzą online). Lokalny mózg pobiera się
+                  raz i działa offline na Twoim urządzeniu.
                 </p>
               </div>
 

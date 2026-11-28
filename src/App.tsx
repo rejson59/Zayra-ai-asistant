@@ -32,14 +32,15 @@ import {
   type VoiceProfile,
 } from './engine/piper';
 import {
-  DEFAULT_LLM,
-  LLM_MODELS,
+  BRAINS,
+  DEFAULT_BRAIN,
+  answer,
+  cleanAnswer,
   hasWebGPU,
-  isModelLoaded,
   loadModel,
-  streamChat,
+  localModelFor,
+  type Brain,
   type ChatMessage,
-  type LlmModel,
 } from './engine/llm';
 import { startStt, sttSupported, type SttHandle } from './engine/stt';
 import { Stage } from './components/Stage';
@@ -86,9 +87,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [captionText, setCaptionText] = useState(SENTENCE);
   const [heardText, setHeardText] = useState('');
-  const [llmModel, setLlmModel] = useState<LlmModel>(() => {
-    const saved = localStorage.getItem('zayra-llm');
-    return LLM_MODELS.find((m) => m.id === saved) ?? DEFAULT_LLM;
+  const [brain, setBrain] = useState<Brain>(() => {
+    const saved = localStorage.getItem('zayra-brain');
+    return BRAINS.find((m) => m.id === saved) ?? DEFAULT_BRAIN;
   });
   const [llmProgress, setLlmProgress] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
@@ -108,8 +109,8 @@ export default function App() {
   const genRef = useRef(0);
   const captionTextRef = useRef(captionText);
   captionTextRef.current = captionText;
-  const llmModelRef = useRef(llmModel);
-  llmModelRef.current = llmModel;
+  const brainRef = useRef(brain);
+  brainRef.current = brain;
   const transcriptRef = useRef('');
   const sttRef = useRef<SttHandle | null>(null);
   const historyRef = useRef<ChatMessage[]>([]);
@@ -239,31 +240,39 @@ export default function App() {
     }
   };
 
-  /** Prawdziwa odpowiedź: transkrypt → lokalny LLM → głos Zayry. */
+  /** Prawdziwa odpowiedź: pytanie → mózg (chmura/local) → głos Zayry. */
   const respond = async (userText: string) => {
     const gen = ++genRef.current;
     setState('thinking');
     setRevealed(0);
     const prompt = userText.trim();
-    if (!prompt || !hasWebGPU()) {
-      if (prompt && !hasWebGPU()) showToast('AI wymaga WebGPU (Chrome/Edge) — odpowiadam demo.');
-      await speakText(SENTENCE, gen);
+    if (!prompt) {
+      await speakText('Nie dosłyszałam. Powtórz, proszę.', gen);
       return;
     }
     historyRef.current.push({ role: 'user', content: prompt });
     try {
-      if (!isModelLoaded(llmModelRef.current.id)) setLlmProgress('Przygotowuję mózg…');
-      const answer = await streamChat(llmModelRef.current.id, historyRef.current, () => {});
+      const { text, source } = await answer(brainRef.current, historyRef.current, (s) =>
+        setLlmProgress(s),
+      );
       setLlmProgress(null);
       if (gen !== genRef.current) return;
-      const finalText = answer || 'Przepraszam, nie mam teraz odpowiedzi. Spróbuj jeszcze raz.';
+      if (source === 'local' && brainRef.current.kind === 'auto') {
+        showToast('Chmura niedostępna — odpowiadam lokalnie.', 3200);
+      }
+      const finalText =
+        cleanAnswer(text) || 'Przepraszam, nie mam teraz odpowiedzi. Spróbuj jeszcze raz.';
       historyRef.current.push({ role: 'assistant', content: finalText });
+      if (historyRef.current.length > 12) {
+        historyRef.current = historyRef.current.slice(-12);
+      }
       await speakText(finalText, gen);
-    } catch {
+    } catch (err) {
       setLlmProgress(null);
       if (gen !== genRef.current) return;
-      showToast('Mózg nie jest gotowy — odpowiadam demo.');
-      await speakText(SENTENCE, gen);
+      const msg = err instanceof Error ? err.message : 'Mózg jest teraz niedostępny.';
+      showToast(msg, 4200);
+      await speakText('Przepraszam, mój mózg jest teraz niedostępny. Spróbuj za chwilę.', gen);
     }
   };
 
@@ -461,15 +470,16 @@ export default function App() {
     void applyVoiceProfile(profile);
   }, [profile]);
 
-  // preload lokalnego mózgu w tle (gotowy, zanim zaczniesz mówić); offline z cache
+  // preload lokalnego mózgu w tle (fallback offline); chmura nie wymaga pobierania
   useEffect(() => {
-    localStorage.setItem('zayra-llm', llmModel.id);
-    if (hasWebGPU()) {
-      void loadModel(llmModel.id, (p) => {
-        setLlmProgress(p < 1 ? `Pobieram mózg… ${Math.round(p * 100)}%` : null);
+    localStorage.setItem('zayra-brain', brain.id);
+    const local = localModelFor(brain);
+    if (local && hasWebGPU()) {
+      void loadModel(local, (p) => {
+        setLlmProgress(p < 1 ? `Pobieram lokalny mózg… ${Math.round(p * 100)}%` : null);
       }).catch(() => setLlmProgress(null));
     }
-  }, [llmModel]);
+  }, [brain]);
 
   useEffect(() => {
     engine.onListeningEnd = () => actionsRef.current.finishListening();
@@ -574,8 +584,8 @@ export default function App() {
             onVoiceChange={setVoiceId}
             profile={profile}
             onProfileChange={setProfile}
-            llmModel={llmModel}
-            onLlmChange={setLlmModel}
+            brain={brain}
+            onBrainChange={setBrain}
           />
           <IconButton label="Zminimalizuj do wyspy" onClick={() => setIslandMode(true)}>
             <Minimize2 size={18} />
