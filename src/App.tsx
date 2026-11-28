@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Captions, Info, Loader2, Minimize2, Moon, Square, Sun, Volume2, VolumeX } from 'lucide-react';
+import {
+  Captions,
+  ExternalLink,
+  Info,
+  Keyboard,
+  Loader2,
+  Minimize2,
+  Moon,
+  Send,
+  Square,
+  Sun,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import type { VoiceId } from '@diffusionstudio/vits-web';
 import type { VoiceState } from './engine/sim';
 import type { Theme } from './engine/palette';
@@ -78,6 +91,11 @@ export default function App() {
     return LLM_MODELS.find((m) => m.id === saved) ?? DEFAULT_LLM;
   });
   const [llmProgress, setLlmProgress] = useState<string | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState('');
+  const [micBlocked, setMicBlocked] = useState(false);
+  const askOpenRef = useRef(askOpen);
+  askOpenRef.current = askOpen;
 
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -116,10 +134,10 @@ export default function App() {
     speakRef.current?.cancel();
     speakRef.current = null;
   };
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, ms = 2600) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
   };
 
   const startCaptionTimer = (interval = WORD_MS) => {
@@ -261,6 +279,11 @@ export default function App() {
   };
 
   const beginListening = () => {
+    if (!sttSupported()) {
+      showToast('Ta przeglądarka nie rozpoznaje mowy — napisz pytanie (najlepiej Chrome/Edge).', 4500);
+      setAskOpen(true);
+      return;
+    }
     genRef.current++;
     clearTimers();
     cancelSpeech();
@@ -272,22 +295,64 @@ export default function App() {
     transcriptRef.current = '';
     setHeardText('');
     sttRef.current?.abort();
-    sttRef.current = sttSupported()
-      ? startStt({
-          onInterim: (t) => {
-            transcriptRef.current = t;
-            setHeardText(t);
-          },
-          onFinal: (t) => {
-            if (t) transcriptRef.current = t;
-          },
-          onError: () => {},
-        })
-      : null;
+    sttRef.current = startStt({
+      onInterim: (t) => {
+        transcriptRef.current = t;
+        setHeardText(t);
+      },
+      onFinal: (t) => {
+        if (t) transcriptRef.current = t;
+      },
+      onError: (err) => {
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          sttRef.current?.abort();
+          sttRef.current = null;
+          engine.disableMic();
+          setMicLive(false);
+          setState('idle');
+          setMicBlocked(true);
+          setAskOpen(true);
+          showToast('Mikrofon zablokowany w podglądzie — otwórz w nowej karcie albo napisz pytanie.', 5000);
+        }
+      },
+    });
     void engine.enableMic().then((ok) => {
       setMicLive(ok);
-      if (!ok) showToast('Mikrofon niedostępny — tryb demo');
+      if (ok) {
+        setMicBlocked(false);
+        return;
+      }
+      sttRef.current?.abort();
+      sttRef.current = null;
+      setState('idle');
+      setMicBlocked(true);
+      setAskOpen(true);
+      showToast(
+        engine.micError === 'NotFoundError' || engine.micError === 'OverconstrainedError'
+          ? 'Nie widzę mikrofonu — napisz pytanie poniżej.'
+          : 'Mikrofon zablokowany w podglądzie — otwórz w nowej karcie albo napisz pytanie.',
+        5000,
+      );
     });
+  };
+
+  /** Awaryjnie: wpisane pytanie trafia do prawdziwego AI i Zayra odpowiada głosem. */
+  const askByText = (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+    setAskOpen(false);
+    setAskText('');
+    genRef.current++;
+    clearTimers();
+    cancelSpeech();
+    sttRef.current?.abort();
+    sttRef.current = null;
+    engine.stopTts();
+    engine.stopPlayback();
+    engine.disableMic();
+    setMicLive(false);
+    setHeardText(q);
+    void respond(q);
   };
 
   const micAction = () => {
@@ -411,6 +476,11 @@ export default function App() {
     window.speechSynthesis?.getVoices();
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+        if (e.key === 'Escape') el.blur();
+        return;
+      }
       const a = actionsRef.current;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -419,7 +489,11 @@ export default function App() {
       else if (e.key === 'c' || e.key === 'C') a.toggleCaptions();
       else if (e.key === 'm' || e.key === 'M') a.toggleVoice();
       else if (e.key === 'i' || e.key === 'I') setIslandMode((v) => !v);
-      else if (e.key === 'Escape') a.stop();
+      else if (e.key === 'p' || e.key === 'P') setAskOpen(true);
+      else if (e.key === 'Escape') {
+        if (askOpenRef.current) setAskOpen(false);
+        else a.stop();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -572,6 +646,41 @@ export default function App() {
           )}
         </div>
 
+        <AnimatePresence>
+          {askOpen && (
+            <motion.form
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.18 }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                askByText(askText);
+              }}
+              className="flex w-full max-w-md items-center gap-2 rounded-full border border-line bg-surface py-1.5 pr-1.5 pl-4 shadow-sm"
+            >
+              <input
+                autoFocus
+                value={askText}
+                onChange={(e) => setAskText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setAskOpen(false);
+                }}
+                placeholder="Napisz, co chcesz powiedzieć Zayrze…"
+                className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink outline-none placeholder:text-dim"
+              />
+              <button
+                type="submit"
+                disabled={!askText.trim()}
+                aria-label="Wyślij pytanie"
+                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white transition-opacity disabled:opacity-40"
+              >
+                <Send size={14} />
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
         <div className="flex items-center gap-4">
           <IconButton label="Napisy na żywo" active={captions} onClick={toggleCaptions}>
             <Captions size={18} />
@@ -580,7 +689,24 @@ export default function App() {
           <IconButton label="Zatrzymaj" onClick={stop} disabled={!active}>
             <Square size={15} />
           </IconButton>
+          <IconButton
+            label="Napisz pytanie (P)"
+            active={askOpen}
+            onClick={() => setAskOpen((v) => !v)}
+          >
+            <Keyboard size={17} />
+          </IconButton>
         </div>
+
+        {micBlocked && (
+          <button
+            onClick={() => window.open(window.location.href, '_blank', 'noopener')}
+            className="flex cursor-pointer items-center gap-1.5 text-[11.5px] font-semibold text-dim transition-colors hover:text-accent"
+          >
+            <ExternalLink size={12} />
+            Otwórz w nowej karcie — tam mikrofon działa
+          </button>
+        )}
 
         <div className="absolute bottom-7 left-6 hidden lg:block">
           <LabPanel state={state} onForce={force} onDemo={runDemo} />

@@ -266,17 +266,21 @@ export class VoiceEngine {
   piperActive = false;
   onListeningEnd: (() => void) | null = null;
 
+  micError: string | null = null;
+
   async enableMic(): Promise<boolean> {
     if (this.micActive) return true;
     if (this.starting) return false;
     this.starting = true;
+    this.micError = null;
     try {
       await this.mic.start();
       this.micActive = true;
       this.resetVad();
       return true;
-    } catch {
+    } catch (err) {
       this.micActive = false;
+      this.micError = err instanceof Error ? err.name : 'unknown';
       return false;
     } finally {
       this.starting = false;
