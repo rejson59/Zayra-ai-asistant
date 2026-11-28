@@ -1,6 +1,6 @@
 import type { MLCEngine } from '@mlc-ai/web-llm';
 
-/** Mózg Zayry: darmowa chmura (bez klucza) i/lub lokalny model w przeglądarce. */
+/** Mózg Zayry: federacja darmowych chmur (bez klucza) + lokalny model w przeglądarce. */
 export type BrainKind = 'auto' | 'cloud' | 'local';
 
 export interface Brain {
@@ -23,7 +23,7 @@ export const BRAINS: Brain[] = [
   {
     id: 'cloud',
     name: 'Chmura',
-    hint: 'GPT-6 · online · 100 odpowiedzi dziennie, co 45 s',
+    hint: 'GPT-6 + Kilo + OVH · online · tysiące odpowiedzi dziennie',
     size: '0 MB',
     kind: 'cloud',
   },
@@ -88,7 +88,7 @@ export function cleanAnswer(t: string): string {
     .trim();
 }
 
-// ---------- wykrywanie zdań w strumieniu + budżet dzienny chmury ----------
+// ---------- wykrywanie zdań w strumieniu ----------
 
 const SENT_END = /[.!?…]+["»)]?\s/g;
 /** Wyłuskuje gotowe zdania z narastającego tekstu (od indeksu `from`). */
@@ -111,29 +111,8 @@ const splitAll = (t: string): string[] =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-// Pollinations: 100 odpowiedzi / dobę (reset 00:00 UTC) + 1 / 45 s.
-const DAILY_LIMIT = 100;
 const dayKey = () => new Date().toISOString().slice(0, 10);
-let budgetDay = localStorage.getItem('zayra-budget-day') ?? '';
-let budgetUsed = Number(localStorage.getItem('zayra-budget-used') ?? 0) || 0;
-const rollBudget = () => {
-  const d = dayKey();
-  if (budgetDay !== d) {
-    budgetDay = d;
-    budgetUsed = 0;
-    localStorage.setItem('zayra-budget-day', d);
-    localStorage.setItem('zayra-budget-used', '0');
-  }
-};
-export const cloudBudget = () => {
-  rollBudget();
-  return { used: budgetUsed, limit: DAILY_LIMIT, remaining: Math.max(0, DAILY_LIMIT - budgetUsed) };
-};
-const bumpBudget = () => {
-  rollBudget();
-  budgetUsed += 1;
-  localStorage.setItem('zayra-budget-used', String(budgetUsed));
-};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- lokalny silnik (WebLLM) ----------
 
@@ -206,35 +185,112 @@ async function localAnswer(
   return full.trim();
 }
 
-// ---------- darmowa chmura (Pollinations, bez klucza) ----------
-// Limit anonimowy ~1 odpowiedź / 45 s na IP. Ukrywamy go przez:
-//  1) cache odpowiedzi (powtórki natychmiast, bez zapytania),
-//  2) śledzenie cooldownu i odliczanie w napisach,
-//  3) krótkie oczekiwanie zamiast głupiego fallbacku (gdy limit blisko),
-//  4) tryb „cierpliwy" — zawsze czeka na mądrą odpowiedź.
+// ---------- federacja darmowych chmur (bez klucza, bez konta) ----------
+// Kilka niezależnych źródeł, każde z własnym limitem. Gdy jedno ma limit,
+// odpowiada kolejne -> większy dzienny limit i brak czekania (szybciej).
+//  - Pollinations: GPT-6 Luna, 100/dzień, 1/45 s.
+//  - Kilo Gateway: Nemotron/Ernie, 200/godzinę (~4800/dzień), bez cooldownu.
+//  - OVHcloud: Qwen3.6, 2/min na model, EU, nie przechowuje danych.
 
-const CLOUD_COOLDOWN_MS = 45_000;
-const WAIT_THRESHOLD_MS = 20_000;
-const CACHE_STORAGE = 'zayra-ans-cache';
-const CACHE_MAX = 120;
+interface CloudProvider {
+  id: string;
+  label: string;
+  url: string;
+  model: string;
+  cooldownMs: number;
+  dailyLimit: number;
+  timeoutMs: number;
+}
 
-let lastCloudAt = Number(localStorage.getItem('zayra-cloud-at') ?? 0) || 0;
+const PROVIDERS: CloudProvider[] = [
+  {
+    id: 'pollinations',
+    label: 'GPT-6',
+    url: 'https://text.pollinations.ai/openai',
+    model: 'openai-fast',
+    cooldownMs: 45_000,
+    dailyLimit: 100,
+    timeoutMs: 60_000,
+  },
+  {
+    id: 'kilo',
+    label: 'Kilo · Nemotron',
+    url: 'https://ai-gateway.kilo.ai/api/v1/chat/completions',
+    model: 'kilo-auto/free',
+    cooldownMs: 0,
+    dailyLimit: 4000,
+    timeoutMs: 30_000,
+  },
+  {
+    id: 'ovh',
+    label: 'OVH · Qwen (EU)',
+    url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+    model: 'Qwen3.6-27B',
+    cooldownMs: 30_000,
+    dailyLimit: 2000,
+    timeoutMs: 30_000,
+  },
+];
+
+const pLast = (p: CloudProvider) => Number(localStorage.getItem('zayra-cl-at-' + p.id) ?? 0) || 0;
+const pUsed = (p: CloudProvider) => {
+  if (localStorage.getItem('zayra-cl-day-' + p.id) !== dayKey()) return 0;
+  return Number(localStorage.getItem('zayra-cl-used-' + p.id) ?? 0) || 0;
+};
+const pCooldown = (p: CloudProvider) => Math.max(0, p.cooldownMs - (Date.now() - pLast(p)));
+const pRemaining = (p: CloudProvider) => Math.max(0, p.dailyLimit - pUsed(p));
+const pMark = (p: CloudProvider) => {
+  localStorage.setItem('zayra-cl-at-' + p.id, String(Date.now()));
+  localStorage.setItem('zayra-cl-day-' + p.id, dayKey());
+  localStorage.setItem('zayra-cl-used-' + p.id, String(pUsed(p) + 1));
+};
+
+export interface CloudStatus {
+  id: string;
+  label: string;
+  used: number;
+  limit: number;
+  cooldown: number;
+}
+export const cloudStatus = (): CloudStatus[] =>
+  PROVIDERS.map((p) => ({
+    id: p.id,
+    label: p.label,
+    used: pUsed(p),
+    limit: p.dailyLimit,
+    cooldown: pCooldown(p),
+  }));
+
+/** Sprawdza, które źródła są osiągalne z tej przeglądarki (CORS + sieć). */
+export const testCloudSources = async (): Promise<
+  Array<{ id: string; label: string; ok: boolean }>
+> =>
+  Promise.all(
+    PROVIDERS.map(async (p) => {
+      const modelsUrl =
+        p.id === 'pollinations'
+          ? 'https://text.pollinations.ai/models'
+          : p.url.replace(/\/chat\/completions$/, '/models');
+      try {
+        const res = await fetch(modelsUrl, { signal: AbortSignal.timeout(8000) });
+        return { id: p.id, label: p.label, ok: res.ok };
+      } catch {
+        return { id: p.id, label: p.label, ok: false };
+      }
+    }),
+  );
+
+// ---------- tryb cierpliwy + cache ----------
+
 let patient = localStorage.getItem('zayra-patient') === '1';
-
 export const setPatient = (v: boolean) => {
   patient = v;
   localStorage.setItem('zayra-patient', v ? '1' : '0');
 };
 export const isPatient = () => patient;
 
-export const cloudCooldownRemaining = () =>
-  Math.max(0, CLOUD_COOLDOWN_MS - (Date.now() - lastCloudAt));
-
-const markCloudCall = () => {
-  lastCloudAt = Date.now();
-  localStorage.setItem('zayra-cloud-at', String(lastCloudAt));
-};
-
+const CACHE_STORAGE = 'zayra-ans-cache';
+const CACHE_MAX = 120;
 type CacheMap = Record<string, { t: string; at: number }>;
 const readCache = (): CacheMap => {
   try {
@@ -265,50 +321,44 @@ const cacheSet = (k: string, t: string) => {
   }
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// ---------- pojedyncze źródło chmury (streaming SSE) ----------
 
-async function cloudAnswer(
+async function callProvider(
+  p: CloudProvider,
   history: ChatMessage[],
   onStatus?: (s: string | null) => void,
   cancelled?: () => boolean,
-  forceWait = false,
+  wait = false,
   onSentence?: (s: string) => void,
 ): Promise<string> {
-  rollBudget();
-  if (budgetUsed >= DAILY_LIMIT) {
-    throw new Error('Dzisiejsze 100 mądrych odpowiedzi zużyte — jutro znów 100.');
-  }
-  let wait = cloudCooldownRemaining();
-  const willWait = forceWait || patient || wait <= WAIT_THRESHOLD_MS;
-  if (wait > 0 && !willWait) throw new Error('cooldown');
-  while (wait > 0) {
+  if (pRemaining(p) <= 0) throw new Error('daily');
+  let w = wait ? pCooldown(p) : 0;
+  while (w > 0) {
     if (cancelled?.()) throw new Error('cancelled');
-    onStatus?.(`Chmura odpowie za ${Math.ceil(wait / 1000)} s…`);
-    await sleep(Math.min(1000, wait));
-    wait = cloudCooldownRemaining();
+    onStatus?.(`${p.label}: odpowiedź za ${Math.ceil(w / 1000)} s…`);
+    await sleep(Math.min(1000, w));
+    w = pCooldown(p);
   }
   if (cancelled?.()) throw new Error('cancelled');
-  onStatus?.('Pytam chmurę…');
-  const res = await fetch('https://text.pollinations.ai/openai', {
+  onStatus?.(`Pytam: ${p.label}…`);
+  const res = await fetch(p.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'openai-fast',
+      model: p.model,
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
       stream: !!onSentence,
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(p.timeoutMs),
   });
   if (res.status === 402 || res.status === 429) {
-    markCloudCall();
-    throw new Error('Darmowa chmura ma limit — spróbuj za chwilę.');
+    pMark(p);
+    throw new Error('rate');
   }
-  if (!res.ok) throw new Error(`Chmura nie odpowiada (${res.status}).`);
-  markCloudCall();
-  bumpBudget();
+  if (!res.ok) throw new Error('http ' + res.status);
+  pMark(p);
 
   const ctype = res.headers.get('content-type') ?? '';
-  // streaming SSE: emituj zdania w miarę generowania (szybszy start głosu)
   if (onSentence && ctype.includes('text/event-stream') && res.body) {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -329,10 +379,10 @@ async function cloudAnswer(
         for (const line of lines) {
           const t = line.trim();
           if (!t.startsWith('data:')) continue;
-          const p = t.slice(5).trim();
-          if (p === '[DONE]') continue;
+          const payload = t.slice(5).trim();
+          if (payload === '[DONE]') continue;
           try {
-            const j = JSON.parse(p);
+            const j = JSON.parse(payload);
             const d = j.choices?.[0]?.delta?.content;
             if (d) full += d;
           } catch {
@@ -344,7 +394,6 @@ async function cloudAnswer(
         for (const s of out) onSentence(s);
       }
     } catch (e) {
-      // błąd w połowie strumienia: oddaj to, co już mamy (nie dubluj fallbackiem)
       if (full.trim()) {
         const tail = full.slice(emitted).trim();
         if (tail) onSentence(tail);
@@ -357,7 +406,6 @@ async function cloudAnswer(
     return full.trim();
   }
 
-  // brak streamu: czytaj całość i emituj zdania hurtowo
   const raw = await res.text();
   let text = '';
   try {
@@ -368,7 +416,7 @@ async function cloudAnswer(
     /* odpowiedź zwykłym tekstem */
   }
   if (!text && raw.trim() && !raw.trim().startsWith('{')) text = raw.trim();
-  if (!text) throw new Error('Chmura nie zwróciła odpowiedzi.');
+  if (!text) throw new Error('empty');
   if (onSentence) for (const s of splitAll(text)) onSentence(s);
   return text;
 }
@@ -378,6 +426,7 @@ async function cloudAnswer(
 export interface AnswerResult {
   text: string;
   source: 'cloud' | 'local';
+  provider?: string;
 }
 
 export async function answer(
@@ -395,32 +444,51 @@ export async function answer(
 
   if (brain.kind === 'local') return useLocal();
 
-  // cache: powtórzone pytanie -> natychmiastowa mądra odpowiedź, bez limitu
+  // cache: powtórzone pytanie -> natychmiast, bez limitu
   const k = cacheKey(history);
   const hit = cacheGet(k);
   if (hit) {
     onStatus?.(null);
     if (onSentence) for (const s of splitAll(hit)) onSentence(s);
-    return { text: hit, source: 'cloud' };
+    return { text: hit, source: 'cloud', provider: 'pamięć' };
   }
 
-  const tryCloud = async (forceWait: boolean) => {
-    const text = await cloudAnswer(history, onStatus, cancelled, forceWait, onSentence);
+  const succeed = async (p: CloudProvider, wait: boolean) => {
+    const text = await callProvider(p, history, onStatus, cancelled, wait, onSentence);
     cacheSet(k, text);
     onStatus?.(null);
-    return { text, source: 'cloud' as const };
+    return { text, source: 'cloud' as const, provider: p.label };
   };
 
-  if (brain.kind === 'cloud') return tryCloud(true);
-
-  // auto: chmura gdy online; krótki limit przeczekaj, długi/offline -> lokalny
   if (navigator.onLine) {
-    try {
-      return await tryCloud(false);
-    } catch (e) {
-      if (cancelled?.() || (e instanceof Error && e.message === 'cancelled')) throw e;
-      onStatus?.(null);
+    // 1) źródła gotowe od razu (bez czekania) — najszybciej
+    for (const p of PROVIDERS) {
+      if (pRemaining(p) <= 0 || pCooldown(p) > 0) continue;
+      try {
+        return await succeed(p, false);
+      } catch (e) {
+        if (cancelled?.() || (e instanceof Error && e.message === 'cancelled')) throw e;
+        onStatus?.(null);
+      }
     }
+    // 2) wszystkie zajęte: poczekaj na najbliższe (gdy chmura/cierpliwy)
+    if (brain.kind === 'cloud' || patient) {
+      const avail = PROVIDERS.filter((p) => pRemaining(p) > 0).sort(
+        (a, b) => pCooldown(a) - pCooldown(b),
+      );
+      for (const p of avail) {
+        try {
+          return await succeed(p, true);
+        } catch (e) {
+          if (cancelled?.() || (e instanceof Error && e.message === 'cancelled')) throw e;
+          onStatus?.(null);
+        }
+      }
+    }
+  }
+
+  if (brain.kind === 'cloud') {
+    throw new Error('Chmury niedostępne — spróbuj później albo wybierz lokalny mózg.');
   }
   return useLocal();
 }

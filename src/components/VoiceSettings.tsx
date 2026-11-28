@@ -14,7 +14,15 @@ import {
   synthesize,
   type VoiceProfile,
 } from '../engine/piper';
-import { BRAINS, cloudBudget, hasWebGPU, isPatient, setPatient, type Brain } from '../engine/llm';
+import {
+  BRAINS,
+  cloudStatus,
+  hasWebGPU,
+  isPatient,
+  setPatient,
+  testCloudSources,
+  type Brain,
+} from '../engine/llm';
 import { IconButton } from './IconButton';
 
 interface Props {
@@ -44,6 +52,10 @@ export function VoiceSettings({
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('voice');
   const [patient, setPatientState] = useState(isPatient());
+  const [srcTest, setSrcTest] = useState<Array<{ id: string; label: string; ok: boolean }> | null>(
+    null,
+  );
+  const [testing, setTesting] = useState(false);
   const [customInstalled, setCustomInstalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
@@ -295,25 +307,51 @@ export function VoiceSettings({
                 {tab === 'brain' && (
                   <div>
                     <SectionLabel>Mózg Zayry · AI</SectionLabel>
-                    {(() => {
-                      const b = cloudBudget();
-                      return (
-                        <div className="mb-2 rounded-xl border border-line px-2.5 py-1.5">
-                          <div className="flex items-center justify-between text-[10.5px] font-semibold text-dim">
-                            <span>Mądre odpowiedzi dziś</span>
-                            <span className="text-ink">
-                              {b.used}/{b.limit}
+                    <div className="mb-2 rounded-xl border border-line px-2.5 py-1.5">
+                      <p className="mb-1.5 text-[10.5px] font-semibold text-dim">
+                        Mądre odpowiedzi dziś · federacja
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {cloudStatus().map((s) => (
+                          <div key={s.id} className="flex items-center gap-2">
+                            <span className="w-24 shrink-0 truncate text-[10px] text-dim">
+                              {s.label}
+                            </span>
+                            <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface2">
+                              <div
+                                className="h-full rounded-full bg-accent transition-all"
+                                style={{ width: `${Math.min(100, (s.used / s.limit) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="w-16 shrink-0 text-right text-[10px] text-ink">
+                              {s.used}/{s.limit}
                             </span>
                           </div>
-                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface2">
-                            <div
-                              className="h-full rounded-full bg-accent transition-all"
-                              style={{ width: `${(b.used / b.limit) * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })()}
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setTesting(true);
+                        setSrcTest(await testCloudSources());
+                        setTesting(false);
+                      }}
+                      disabled={testing}
+                      className="mb-1.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-line px-2.5 py-1.5 text-[10.5px] font-semibold text-dim transition-colors hover:text-ink disabled:opacity-40"
+                    >
+                      {testing && <Loader2 size={12} className="animate-spin" />}
+                      {testing ? 'Sprawdzam źródła…' : 'Sprawdź, które chmury działają'}
+                    </button>
+                    {srcTest && (
+                      <p className="mb-2 text-[10px] leading-snug text-dim">
+                        <span className="text-accent">
+                          ✓ {srcTest.filter((s) => s.ok).map((s) => s.label).join(', ') || 'brak'}
+                        </span>
+                        {srcTest.some((s) => !s.ok) && (
+                          <> · ✗ {srcTest.filter((s) => !s.ok).map((s) => s.label).join(', ')}</>
+                        )}
+                      </p>
+                    )}
                     {!hasWebGPU() && (
                       <p className="mb-2 rounded-xl border border-line px-2.5 py-1.5 text-[10.5px] leading-snug text-dim">
                         Ta przeglądarka nie ma WebGPU — lokalny mózg nie zadziała, ale chmura tak.
