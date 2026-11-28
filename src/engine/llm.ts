@@ -23,7 +23,7 @@ export const BRAINS: Brain[] = [
   {
     id: 'cloud',
     name: 'Chmura',
-    hint: 'najmądrzejsza · online · limit ok. 1 pytanie / 45 s',
+    hint: 'GPT-6 · online · 100 odpowiedzi dziennie, co 45 s',
     size: '0 MB',
     kind: 'cloud',
   },
@@ -88,6 +88,53 @@ export function cleanAnswer(t: string): string {
     .trim();
 }
 
+// ---------- wykrywanie zdań w strumieniu + budżet dzienny chmury ----------
+
+const SENT_END = /[.!?…]+["»)]?\s/g;
+/** Wyłuskuje gotowe zdania z narastającego tekstu (od indeksu `from`). */
+function drainSentences(full: string, from: number): { out: string[]; next: number } {
+  const out: string[] = [];
+  let last = from;
+  SENT_END.lastIndex = from;
+  let m: RegExpExecArray | null;
+  while ((m = SENT_END.exec(full))) {
+    const end = m.index + m[0].length;
+    const s = full.slice(last, end).trim();
+    if (s) out.push(s);
+    last = end;
+  }
+  return { out, next: last };
+}
+const splitAll = (t: string): string[] =>
+  t
+    .split(/(?<=[.!?…])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+// Pollinations: 100 odpowiedzi / dobę (reset 00:00 UTC) + 1 / 45 s.
+const DAILY_LIMIT = 100;
+const dayKey = () => new Date().toISOString().slice(0, 10);
+let budgetDay = localStorage.getItem('zayra-budget-day') ?? '';
+let budgetUsed = Number(localStorage.getItem('zayra-budget-used') ?? 0) || 0;
+const rollBudget = () => {
+  const d = dayKey();
+  if (budgetDay !== d) {
+    budgetDay = d;
+    budgetUsed = 0;
+    localStorage.setItem('zayra-budget-day', d);
+    localStorage.setItem('zayra-budget-used', '0');
+  }
+};
+export const cloudBudget = () => {
+  rollBudget();
+  return { used: budgetUsed, limit: DAILY_LIMIT, remaining: Math.max(0, DAILY_LIMIT - budgetUsed) };
+};
+const bumpBudget = () => {
+  rollBudget();
+  budgetUsed += 1;
+  localStorage.setItem('zayra-budget-used', String(budgetUsed));
+};
+
 // ---------- lokalny silnik (WebLLM) ----------
 
 let engine: MLCEngine | null = null;
@@ -124,6 +171,7 @@ async function localAnswer(
   modelId: string,
   history: ChatMessage[],
   onStatus?: (s: string | null) => void,
+  onSentence?: (s: string) => void,
 ): Promise<string> {
   if (!hasWebGPU()) {
     throw new Error('Lokalny mózg wymaga WebGPU — użyj Chrome lub Edge.');
@@ -141,9 +189,19 @@ async function localAnswer(
     ...{ extra_body: { enable_thinking: false } },
   });
   let full = '';
+  let emitted = 0;
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta?.content;
     if (delta) full += delta;
+    if (onSentence) {
+      const { out, next } = drainSentences(full, emitted);
+      emitted = next;
+      for (const s of out) onSentence(s);
+    }
+  }
+  if (onSentence) {
+    const tail = full.slice(emitted).trim();
+    if (tail) onSentence(tail);
   }
   return full.trim();
 }
@@ -214,7 +272,12 @@ async function cloudAnswer(
   onStatus?: (s: string | null) => void,
   cancelled?: () => boolean,
   forceWait = false,
+  onSentence?: (s: string) => void,
 ): Promise<string> {
+  rollBudget();
+  if (budgetUsed >= DAILY_LIMIT) {
+    throw new Error('Dzisiejsze 100 mądrych odpowiedzi zużyte — jutro znów 100.');
+  }
   let wait = cloudCooldownRemaining();
   const willWait = forceWait || patient || wait <= WAIT_THRESHOLD_MS;
   if (wait > 0 && !willWait) throw new Error('cooldown');
@@ -232,27 +295,82 @@ async function cloudAnswer(
     body: JSON.stringify({
       model: 'openai-fast',
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
-      temperature: 0.5,
-      max_tokens: 220,
+      stream: !!onSentence,
     }),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(60000),
   });
   if (res.status === 402 || res.status === 429) {
     markCloudCall();
     throw new Error('Darmowa chmura ma limit — spróbuj za chwilę.');
   }
   if (!res.ok) throw new Error(`Chmura nie odpowiada (${res.status}).`);
-  const raw = await res.text();
   markCloudCall();
+  bumpBudget();
+
+  const ctype = res.headers.get('content-type') ?? '';
+  // streaming SSE: emituj zdania w miarę generowania (szybszy start głosu)
+  if (onSentence && ctype.includes('text/event-stream') && res.body) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let full = '';
+    let emitted = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (cancelled?.()) {
+          void reader.cancel();
+          throw new Error('cancelled');
+        }
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t.startsWith('data:')) continue;
+          const p = t.slice(5).trim();
+          if (p === '[DONE]') continue;
+          try {
+            const j = JSON.parse(p);
+            const d = j.choices?.[0]?.delta?.content;
+            if (d) full += d;
+          } catch {
+            /* niepełny / sercowy wpis */
+          }
+        }
+        const { out, next } = drainSentences(full, emitted);
+        emitted = next;
+        for (const s of out) onSentence(s);
+      }
+    } catch (e) {
+      // błąd w połowie strumienia: oddaj to, co już mamy (nie dubluj fallbackiem)
+      if (full.trim()) {
+        const tail = full.slice(emitted).trim();
+        if (tail) onSentence(tail);
+        return full.trim();
+      }
+      throw e;
+    }
+    const tail = full.slice(emitted).trim();
+    if (tail) onSentence(tail);
+    return full.trim();
+  }
+
+  // brak streamu: czytaj całość i emituj zdania hurtowo
+  const raw = await res.text();
+  let text = '';
   try {
     const data = JSON.parse(raw);
-    const text = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text;
-    if (typeof text === 'string' && text.trim()) return text.trim();
+    const t = data.choices?.[0]?.message?.content ?? data.choices?.[0]?.text;
+    if (typeof t === 'string') text = t.trim();
   } catch {
     /* odpowiedź zwykłym tekstem */
   }
-  if (raw.trim() && !raw.trim().startsWith('{')) return raw.trim();
-  throw new Error('Chmura nie zwróciła odpowiedzi.');
+  if (!text && raw.trim() && !raw.trim().startsWith('{')) text = raw.trim();
+  if (!text) throw new Error('Chmura nie zwróciła odpowiedzi.');
+  if (onSentence) for (const s of splitAll(text)) onSentence(s);
+  return text;
 }
 
 // ---------- routing ----------
@@ -267,9 +385,10 @@ export async function answer(
   history: ChatMessage[],
   onStatus?: (s: string | null) => void,
   cancelled?: () => boolean,
+  onSentence?: (s: string) => void,
 ): Promise<AnswerResult> {
   const useLocal = () =>
-    localAnswer(brain.modelId ?? AUTO_LOCAL_MODEL, history, onStatus).then((text) => ({
+    localAnswer(brain.modelId ?? AUTO_LOCAL_MODEL, history, onStatus, onSentence).then((text) => ({
       text,
       source: 'local' as const,
     }));
@@ -281,11 +400,12 @@ export async function answer(
   const hit = cacheGet(k);
   if (hit) {
     onStatus?.(null);
+    if (onSentence) for (const s of splitAll(hit)) onSentence(s);
     return { text: hit, source: 'cloud' };
   }
 
   const tryCloud = async (forceWait: boolean) => {
-    const text = await cloudAnswer(history, onStatus, cancelled, forceWait);
+    const text = await cloudAnswer(history, onStatus, cancelled, forceWait, onSentence);
     cacheSet(k, text);
     onStatus?.(null);
     return { text, source: 'cloud' as const };

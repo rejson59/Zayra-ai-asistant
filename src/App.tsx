@@ -251,12 +251,45 @@ export default function App() {
       return;
     }
     historyRef.current.push({ role: 'user', content: prompt });
+
+    // Głos napędzany strumieniem: syntezuj i odtwarzaj zdania w miarę napływania,
+    // żeby Zayra zaczynała mówić, gdy reszta odpowiedzi jeszcze się generuje.
+    let started = false;
+    let chain: Promise<void> = Promise.resolve();
+    let captionAcc = '';
+    const onSentence = (raw: string) => {
+      const s = cleanAnswer(raw);
+      if (!s) return;
+      captionAcc += (captionAcc ? ' ' : '') + s;
+      setCaptionText(captionAcc);
+      captionTextRef.current = captionAcc;
+      chain = chain.then(async () => {
+        if (gen !== genRef.current || !voiceOnRef.current) return;
+        try {
+          const blob = await synthesize(s, voiceIdRef.current);
+          if (gen !== genRef.current) return;
+          const buffer = await engine.decodeAudio(blob);
+          if (gen !== genRef.current) return;
+          if (!started) {
+            started = true;
+            engine.beginStream(() => finishSpeaking());
+            setState('speaking');
+            startCaptionTimer(Math.max(70, WORD_MS));
+          }
+          engine.enqueue(buffer);
+        } catch {
+          /* pojedyncze zdanie nie zsyntezowane — pomiń */
+        }
+      });
+    };
+
     try {
       const { text, source } = await answer(
         brainRef.current,
         historyRef.current,
         (s) => setLlmProgress(s),
         () => gen !== genRef.current,
+        onSentence,
       );
       setLlmProgress(null);
       if (gen !== genRef.current) return;
@@ -269,7 +302,14 @@ export default function App() {
       if (historyRef.current.length > 12) {
         historyRef.current = historyRef.current.slice(-12);
       }
-      await speakText(finalText, gen);
+      await chain;
+      if (gen !== genRef.current) return;
+      if (started) {
+        engine.endStream();
+        later(() => finishSpeaking(), 60000);
+      } else {
+        await speakText(finalText, gen);
+      }
     } catch (err) {
       setLlmProgress(null);
       if (gen !== genRef.current) return;

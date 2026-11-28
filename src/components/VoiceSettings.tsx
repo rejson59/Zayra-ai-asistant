@@ -14,7 +14,7 @@ import {
   synthesize,
   type VoiceProfile,
 } from '../engine/piper';
-import { BRAINS, hasWebGPU, isPatient, setPatient, type Brain } from '../engine/llm';
+import { BRAINS, cloudBudget, hasWebGPU, isPatient, setPatient, type Brain } from '../engine/llm';
 import { IconButton } from './IconButton';
 
 interface Props {
@@ -295,6 +295,25 @@ export function VoiceSettings({
                 {tab === 'brain' && (
                   <div>
                     <SectionLabel>Mózg Zayry · AI</SectionLabel>
+                    {(() => {
+                      const b = cloudBudget();
+                      return (
+                        <div className="mb-2 rounded-xl border border-line px-2.5 py-1.5">
+                          <div className="flex items-center justify-between text-[10.5px] font-semibold text-dim">
+                            <span>Mądre odpowiedzi dziś</span>
+                            <span className="text-ink">
+                              {b.used}/{b.limit}
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface2">
+                            <div
+                              className="h-full rounded-full bg-accent transition-all"
+                              style={{ width: `${(b.used / b.limit) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {!hasWebGPU() && (
                       <p className="mb-2 rounded-xl border border-line px-2.5 py-1.5 text-[10.5px] leading-snug text-dim">
                         Ta przeglądarka nie ma WebGPU — lokalny mózg nie zadziała, ale chmura tak.
